@@ -175,10 +175,13 @@ static lv_obj_t *make_screen(Screen id, const char *title) {
     }
     c.title = label(head, &inter_18, K_FG, title);
     lv_obj_set_flex_grow(c.title, 1);
+    lv_label_set_long_mode(c.title, LV_LABEL_LONG_CLIP);
     c.clock = label(head, &inter_22, K_FG);
-    lv_obj_set_width(c.clock, 66);   // fixed width so the digits do not nudge the layout
+    lv_obj_set_width(c.clock, 80);   // fixed width so the digits do not nudge the layout
+    lv_label_set_long_mode(c.clock, LV_LABEL_LONG_CLIP);   // never wrap onto a second line
     lv_obj_set_style_text_align(c.clock, LV_TEXT_ALIGN_RIGHT, 0);
 
+    box(s, 8, 45, SCREEN_W - 16, 1, 0x333333);   // divider between heading and content
     lv_obj_t *foot = hrow(s, 8, SCREEN_H - 28, SCREEN_W - 16, 26, 0, LV_FLEX_ALIGN_START);
     lv_obj_t *left = hrow(foot, 0, 0, 72, 26, 6, LV_FLEX_ALIGN_START);
     for (int i = 0; i < CONTENT_SCREENS; i++) c.dots[i] = box(left, 0, 0, 6, 6, K_BORDER, LV_RADIUS_CIRCLE);
@@ -223,7 +226,7 @@ struct CardUI {
     Meter session, weekly;
 };
 static CardUI cards[2];
-static const int CARD_Y = 48, CARD_H = 158, BAR_H = 12;
+static const int CARD_Y = 52, CARD_H = 154, BAR_H = 12;
 
 
 static Meter make_meter(lv_obj_t *card, int y) {
@@ -292,7 +295,7 @@ static void build_ai() {
     lv_obj_t *s = scr[S_AI];
     make_card(cards[0], s);
     make_card(cards[1], s);
-    waiting_box = box(s, 0, 44, SCREEN_W, 160, K_BG);
+    waiting_box = box(s, 0, 48, SCREEN_W, 158, K_BG);
     lv_obj_remove_flag(waiting_box, LV_OBJ_FLAG_CLICKABLE);
     waiting_title = label(waiting_box, &inter_22, K_FG, "Waiting for data");
     lv_obj_align(waiting_title, LV_ALIGN_TOP_MID, 0, 40);
@@ -380,7 +383,7 @@ static void update_coin(const Data &d, bool have) {
     lv_obj_update_layout(coin_head[1]);
     right_at(coin_head[1], COIN_PRICE_X, 8);
     right_at(coin_head[2], COIN_CHANGE_X, 8);
-    int rowH = d.coinCount == 1 ? 100 : d.coinCount == 2 ? 58 : 124 / d.coinCount, y0 = 30;   // rows share the 124 px under the header
+    int rowH = d.coinCount == 1 ? 100 : d.coinCount == 2 ? 56 : 120 / d.coinCount, y0 = 30;   // rows share the 120 px under the header
     for (int i = 0; i < 4; i++) {
         CoinRow &r = coinRows[i];
         bool shown = i < d.coinCount;
@@ -581,22 +584,22 @@ static void setting_row(lv_obj_t *s, int y, const char *name) {
 
 static void build_settings() {
     lv_obj_t *s = scr[S_SETTINGS];
-    setting_row(s, 50, "Brightness");
-    lv_obj_t *minus = pill(s, 200, 50, 34, "-", nullptr);
-    lv_obj_t *plus = pill(s, 278, 50, 34, "+", nullptr);
+    setting_row(s, 54, "Brightness");
+    lv_obj_t *minus = pill(s, 200, 54, 34, "-", nullptr);
+    lv_obj_t *plus = pill(s, 278, 54, 34, "+", nullptr);
     lv_obj_t *mid = label(s, &inter_14, K_FG, "");
     bright_val = mid;
-    lv_obj_set_pos(mid, 242, 57);
+    lv_obj_set_pos(mid, 242, 61);
     for (lv_obj_t *b : {minus, plus}) lv_obj_add_flag(b, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_add_event_cb(minus, on_bright, LV_EVENT_CLICKED, (void *)(intptr_t)-1);
     lv_obj_add_event_cb(plus, on_bright, LV_EVENT_CLICKED, (void *)(intptr_t)1);
 
-    setting_row(s, 92, "Display");
-    pill(s, 174, 92, 138, "", &display_val);
+    setting_row(s, 94, "Display");
+    pill(s, 174, 94, 138, "", &display_val);
     setting_row(s, 134, "Computer");
     pill(s, 154, 134, 158, "", &host_val);
-    setting_row(s, 176, "Wi-Fi");
-    lv_obj_t *rp = pill(s, 182, 176, 130, "Reset setup", &reset_lbl);
+    setting_row(s, 174, "Wi-Fi");
+    lv_obj_t *rp = pill(s, 182, 174, 130, "Reset setup", &reset_lbl);
     lv_obj_add_flag(rp, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_add_event_cb(rp, on_reset, LV_EVENT_CLICKED, nullptr);
 }
@@ -605,7 +608,7 @@ static void update_settings(const Data &d, bool have) {
     char buf[40];
     snprintf(buf, sizeof(buf), "%d/4", cfg.brightness + 1);
     set_text(bright_val, buf);
-    lv_obj_set_pos(bright_val, 256 - lv_obj_get_width(bright_val) / 2, 57);
+    lv_obj_set_pos(bright_val, 256 - lv_obj_get_width(bright_val) / 2, 61);
     set_text(display_val, have && d.multi ? "Claude + Codex" : "Claude only");
     lv_obj_center(display_val);
     snprintf(buf, sizeof(buf), "%s:%u", cfg.host.c_str(), cfg.port);
