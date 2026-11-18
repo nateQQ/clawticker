@@ -3,6 +3,7 @@
 #include <math.h>
 #include "data.h"
 #include "hw.h"
+#include "icons.h"
 #include "net.h"
 #include "pins.h"
 #include "settings.h"
@@ -19,12 +20,14 @@ static const uint32_t K_BG = 0x000000, K_FG = 0xFAF9F5, K_DIM = 0xB0AEA5, K_TRAC
 static const uint32_t K_BORDER = 0x505050, K_ACCENT = 0xF2691E, K_ACCENT_DIM = 0x8F4423;
 static const uint32_t K_GOOD = 0x5FC85A, K_BAD = 0xE63329, K_BAD_DIM = 0x8C2A24;
 
-enum Screen { S_AI, S_COIN, S_SPLASH, S_SETTINGS, S_COUNT };
+static const uint32_t K_CLAUDE = 0xF2691E, K_CODEX = 0x6C8CFF, K_AMBER = 0xF5A623;
+
+enum Screen { S_AI, S_COIN, S_SPLASH, S_SETTINGS, S_ALERT, S_COUNT };
 static const int CONTENT_SCREENS = 3;
 static const int SESSION_MIN = 300, WEEK_MIN = 10080;   // window lengths, for the pace marker
 
 static lv_obj_t *scr[S_COUNT];
-static Screen current = S_AI, previous = S_AI;
+static Screen current = S_AI, previous = S_AI, alertReturn = S_AI;
 static uint32_t confirmResetUntil = 0;
 
 // ---- small builders -------------------------------------------------------
@@ -53,6 +56,37 @@ static void set_text(lv_obj_t *l, const char *txt) {
 }
 
 static void set_color(lv_obj_t *o, uint32_t color) { lv_obj_set_style_text_color(o, COL(color), 0); }
+
+// Blend a toward b, t = 0..255.
+static uint32_t mix(uint32_t a, uint32_t b, int t) {
+    auto ch = [&](int sh) { return (uint32_t)((((a >> sh) & 255) * (255 - t) + ((b >> sh) & 255) * t) / 255); };
+    return (ch(16) << 16) | (ch(8) << 8) | ch(0);
+}
+
+static bool is_codex(const char *name) { return strcmp(name, "Codex") == 0; }
+static uint32_t provider_color(const char *name) { return is_codex(name) ? K_CODEX : K_CLAUDE; }
+static const lv_image_dsc_t *provider_icon(const char *name) { return is_codex(name) ? &icon_term16 : &icon_burst16; }
+
+static lv_obj_t *icon(lv_obj_t *parent, const lv_image_dsc_t *src, uint32_t color) {
+    lv_obj_t *i = lv_image_create(parent);
+    lv_image_set_src(i, src);
+    lv_obj_set_style_image_recolor(i, COL(color), 0);
+    lv_obj_set_style_image_recolor_opa(i, LV_OPA_COVER, 0);
+    return i;
+}
+
+// Horizontal gradient fill: base color to a lighter tint of it.
+static void gradient(lv_obj_t *o, uint32_t c) {
+    lv_obj_set_style_bg_color(o, COL(c), 0);
+    lv_obj_set_style_bg_grad_color(o, COL(mix(c, 0xFFFFFF, 80)), 0);
+    lv_obj_set_style_bg_grad_dir(o, LV_GRAD_DIR_HOR, 0);
+}
+
+// Rotating status words shown in the footer while data is flowing.
+static const char *VERBS[] = {"Pondering", "Tinkering", "Brewing", "Conjuring", "Percolating", "Noodling", "Simmering",
+                              "Untangling", "Whittling", "Spelunking", "Marinating", "Cogitating", "Daydreaming",
+                              "Doodling", "Fermenting", "Hatching", "Juggling", "Musing", "Polishing", "Weaving"};
+static const int VERB_COUNT = sizeof(VERBS) / sizeof(VERBS[0]);
 
 // "37m", "1h37m", "4d19h"
 static void fmt_short(char *out, size_t n, int minutes) {
@@ -88,12 +122,15 @@ static void fmt_date(char *out, size_t n, uint32_t t) {
 // ---- chrome shared by every screen (header + footer) ----------------------
 
 struct Chrome {
-    lv_obj_t *title, *clock, *date, *status, *gear, *dots[CONTENT_SCREENS];
+    lv_obj_t *title, *clock, *date, *status, *statusIcon, *gear, *dots[CONTENT_SCREENS];
 };
 static Chrome chrome[S_COUNT];
 
+static void dismiss_alert();
+
 static void on_screen_tap(lv_event_t *) {
     if (current == S_SETTINGS) return;
+    if (current == S_ALERT) { dismiss_alert(); return; }
     ui_next_screen();
 }
 
@@ -137,6 +174,7 @@ static lv_obj_t *make_screen(Screen id, const char *title) {
     }
     c.status = label(s, &inter_14, K_DIM);
     lv_obj_align(c.status, LV_ALIGN_BOTTOM_MID, 0, -6);
+    c.statusIcon = icon(s, &icon_burst12, K_ACCENT);
     c.gear = label(s, &lv_font_montserrat_14, K_DIM, id == S_SETTINGS ? LV_SYMBOL_CLOSE : LV_SYMBOL_SETTINGS);
     lv_obj_align(c.gear, LV_ALIGN_BOTTOM_RIGHT, -12, -8);
     lv_obj_add_flag(c.gear, LV_OBJ_FLAG_CLICKABLE);
@@ -156,9 +194,15 @@ static void refresh_chrome(Screen id, const Data &d, bool have) {
         set_text(c.date, buf);
     }
     bool fresh = have && net_age_ms() < 20000;
-    set_text(c.status, fresh ? "Connected" : net_wifi_connected() ? "No data" : "Connecting...");
+    char verb[32];
+    snprintf(verb, sizeof(verb), "%s...", VERBS[((millis() / 4500) * 7) % VERB_COUNT]);
+    set_text(c.status, fresh ? verb : net_wifi_connected() ? "No data" : "Connecting...");
     set_color(c.status, fresh ? K_ACCENT : K_DIM);
-    lv_obj_align(c.status, LV_ALIGN_BOTTOM_MID, 0, -6);
+    lv_obj_update_layout(c.status);
+    int tw = lv_obj_get_width(c.status), start = fresh ? (SCREEN_W - (tw + 18)) / 2 : (SCREEN_W - tw) / 2;
+    lv_obj_align(c.status, LV_ALIGN_TOP_LEFT, start + (fresh ? 18 : 0), SCREEN_H - 24);
+    if (fresh) { lv_obj_remove_flag(c.statusIcon, LV_OBJ_FLAG_HIDDEN); lv_obj_set_pos(c.statusIcon, start, SCREEN_H - 22); }
+    else lv_obj_add_flag(c.statusIcon, LV_OBJ_FLAG_HIDDEN);
     for (int i = 0; i < CONTENT_SCREENS; i++)
         lv_obj_set_style_bg_color(c.dots[i], COL(id != S_SETTINGS && i == (int)id ? K_ACCENT : K_BORDER), 0);
 }
@@ -169,7 +213,7 @@ struct Meter {
     lv_obj_t *pct, *reset, *track, *fill, *mark;
 };
 struct CardUI {
-    lv_obj_t *root, *name, *off;
+    lv_obj_t *root, *name, *off, *icon;
     Meter session, weekly;
 };
 static CardUI cards[2];
@@ -193,8 +237,11 @@ static void make_card(CardUI &c, lv_obj_t *parent) {
     lv_obj_set_style_border_color(c.root, COL(K_BORDER), 0);
     lv_obj_set_style_border_width(c.root, 1, 0);
     lv_obj_set_style_radius(c.root, 10, 0);
-    c.name = label(c.root, &inter_14, K_DIM);
-    lv_obj_set_pos(c.name, 12, 8);
+    lv_obj_set_style_bg_opa(c.root, LV_OPA_COVER, 0);
+    c.icon = icon(c.root, &icon_burst16, K_CLAUDE);
+    lv_obj_set_pos(c.icon, 12, 9);
+    c.name = label(c.root, &inter_14, K_FG);
+    lv_obj_set_pos(c.name, 33, 8);
     c.off = label(c.root, &inter_12, K_DIM, "not detected");
     c.session = make_meter(c.root, 34);
     c.weekly = make_meter(c.root, 100);
@@ -212,7 +259,7 @@ static void layout_card(CardUI &c, int x, int w) {
     }
 }
 
-static void update_meter(Meter &m, int pct, int resetMin, int windowMin, bool off, bool weekly, int cardW) {
+static void update_meter(Meter &m, int pct, int resetMin, int windowMin, bool off, bool weekly, int cardW, uint32_t tint) {
     char buf[16];
     int trackW = cardW - 26;
     snprintf(buf, sizeof(buf), off ? "--" : "%d%%", pct);
@@ -221,8 +268,8 @@ static void update_meter(Meter &m, int pct, int resetMin, int windowMin, bool of
     fmt_short(buf, sizeof(buf), off ? -1 : resetMin);
     set_text(m.reset, off ? "" : buf);
     lv_obj_set_x(m.reset, cardW - 14 - lv_obj_get_width(m.reset));
-    bool hot = pct >= 85;
-    lv_obj_set_style_bg_color(m.fill, COL(hot ? (weekly ? K_BAD_DIM : K_BAD) : (weekly ? K_ACCENT_DIM : K_ACCENT)), 0);
+    uint32_t base = pct >= 85 ? K_BAD : pct >= 60 ? K_AMBER : tint;
+    gradient(m.fill, weekly ? mix(K_BG, base, 150) : base);
     lv_obj_set_width(m.fill, off ? 0 : max(pct * trackW / 100, pct > 0 ? 6 : 0));
     if (off || resetMin < 0) lv_obj_add_flag(m.mark, LV_OBJ_FLAG_HIDDEN);
     else {
@@ -271,19 +318,37 @@ static void update_ai(const Data &d, bool have) {
         int w = multi ? 148 : 304, x = multi ? (i == 0 ? 8 : 164) : 8;
         layout_card(cards[i], x, w);
         const Card &c = d.cards[i];
+        uint32_t tint = provider_color(c.name);
+        lv_obj_set_style_bg_color(cards[i].root, COL(mix(K_BG, tint, 20)), 0);
+        lv_obj_set_style_border_color(cards[i].root, COL(mix(0x303030, tint, 110)), 0);
+        lv_image_set_src(cards[i].icon, provider_icon(c.name));
+        lv_obj_set_style_image_recolor(cards[i].icon, COL(tint), 0);
         set_text(cards[i].name, multi ? c.name : "Plan usage");
         if (c.off) lv_obj_remove_flag(cards[i].off, LV_OBJ_FLAG_HIDDEN);
         else lv_obj_add_flag(cards[i].off, LV_OBJ_FLAG_HIDDEN);
-        update_meter(cards[i].session, c.session, c.sessionReset, SESSION_MIN, c.off, false, w);
-        update_meter(cards[i].weekly, c.weekly, c.weeklyReset, WEEK_MIN, c.off, true, w);
+        update_meter(cards[i].session, c.session, c.sessionReset, SESSION_MIN, c.off, false, w, tint);
+        update_meter(cards[i].weekly, c.weekly, c.weeklyReset, WEEK_MIN, c.off, true, w, tint);
     }
 }
 
 // ---- Coin screen ----------------------------------------------------------
 
-struct CoinRow { lv_obj_t *pair, *price, *change; };
+struct CoinRow { lv_obj_t *badge, *letter, *pair, *price, *change; };
 static CoinRow coinRows[4];
 static lv_obj_t *coin_empty;
+
+static uint32_t coin_color(const char *sym) {
+    if (!strcmp(sym, "BTC")) return 0xF7931A;
+    if (!strcmp(sym, "ETH")) return 0x627EEA;
+    if (!strcmp(sym, "SOL")) return 0x9945FF;
+    if (!strcmp(sym, "SUI")) return 0x4DA2FF;
+    if (!strcmp(sym, "XRP")) return 0x3A7BC8;
+    if (!strcmp(sym, "DOGE")) return 0xC2A633;
+    static const uint32_t PALETTE[] = {0x2BB673, 0xE0527A, 0x13A8B8, 0xB06AD8, 0xD98B2B};
+    uint32_t h = 0;
+    for (const char *p = sym; *p; p++) h = h * 31 + *p;
+    return PALETTE[h % 5];
+}
 
 static void build_coin() {
     lv_obj_t *s = scr[S_COIN];
@@ -294,6 +359,9 @@ static void build_coin() {
     lv_obj_t *h3 = label(s, &inter_14, K_DIM, "24h");
     lv_obj_align(h3, LV_ALIGN_TOP_RIGHT, -12, 52);
     for (int i = 0; i < 4; i++) {
+        coinRows[i].badge = box(s, 12, 0, 26, 26, K_TRACK, LV_RADIUS_CIRCLE);
+        coinRows[i].letter = label(coinRows[i].badge, &inter_14, 0xFFFFFF, "?");
+        lv_obj_center(coinRows[i].letter);
         coinRows[i].pair = label(s, &inter_16, K_FG);
         coinRows[i].price = label(s, &inter_18, K_FG);
         coinRows[i].change = label(s, &inter_14, K_GOOD);
@@ -314,11 +382,13 @@ static void update_coin(const Data &d, bool have) {
     for (int i = 0; i < 4; i++) {
         CoinRow &r = coinRows[i];
         if (!live || i >= d.coinCount) {
+            lv_obj_add_flag(r.badge, LV_OBJ_FLAG_HIDDEN);
             lv_obj_add_flag(r.pair, LV_OBJ_FLAG_HIDDEN);
             lv_obj_add_flag(r.price, LV_OBJ_FLAG_HIDDEN);
             lv_obj_add_flag(r.change, LV_OBJ_FLAG_HIDDEN);
             continue;
         }
+        lv_obj_remove_flag(r.badge, LV_OBJ_FLAG_HIDDEN);
         lv_obj_remove_flag(r.pair, LV_OBJ_FLAG_HIDDEN);
         lv_obj_remove_flag(r.price, LV_OBJ_FLAG_HIDDEN);
         lv_obj_remove_flag(r.change, LV_OBJ_FLAG_HIDDEN);
@@ -327,7 +397,12 @@ static void update_coin(const Data &d, bool have) {
         int y = 84 + i * rowH;
         snprintf(buf, sizeof(buf), "%s/USD", c.sym);
         set_text(r.pair, buf);
-        lv_obj_set_pos(r.pair, 12, y + 2);
+        lv_obj_set_pos(r.pair, 46, y + 2);
+        lv_obj_set_y(r.badge, y - 2);
+        lv_obj_set_style_bg_color(r.badge, COL(coin_color(c.sym)), 0);
+        char one[2] = {c.sym[0], 0};
+        set_text(r.letter, one);
+        lv_obj_center(r.letter);
         fmt_price(num, sizeof(num), c.price);
         snprintf(buf, sizeof(buf), "$%s", num);
         set_text(r.price, buf);
@@ -340,52 +415,119 @@ static void update_coin(const Data &d, bool have) {
     }
 }
 
+// ---- Mascot (splash + alert) ----------------------------------------------
+
+struct Mascot { lv_obj_t *shadow, *body, *armL, *armR, *legL, *legR, *eyeL, *eyeR, *drop; };
+
+static Mascot build_mascot(lv_obj_t *p) {
+    Mascot m;
+    m.shadow = box(p, 0, 0, 80, 8, 0x1A1A1A, LV_RADIUS_CIRCLE);
+    m.legL = box(p, 0, 0, 14, 12, K_DIM);
+    m.legR = box(p, 0, 0, 14, 12, K_DIM);
+    m.armL = box(p, 0, 0, 16, 22, K_DIM, 6);
+    m.armR = box(p, 0, 0, 16, 22, K_DIM, 6);
+    m.body = box(p, 0, 0, 96, 80, K_DIM, 14);
+    m.eyeL = box(p, 0, 0, 12, 18, K_BG, 2);
+    m.eyeR = box(p, 0, 0, 12, 18, K_BG, 2);
+    m.drop = box(p, 0, 0, 6, 9, 0x6EAAFF, LV_RADIUS_CIRCLE);
+    return m;
+}
+
+// One hop every 1/rate seconds: stretch in the air, squash on landing, arms up.
+static void update_mascot(Mascot &m, int cx, int ground, float t, uint32_t color, float rate, bool sweat) {
+    float p = fmodf(t * rate, 1.0f);
+    float air = 0, squash = 0;
+    if (p < 0.7f) { float q = p / 0.7f; air = 4 * q * (1 - q); }
+    else squash = sinf((p - 0.7f) / 0.3f * (float)M_PI);
+    float sy = 1.0f + 0.06f * air - 0.16f * squash;
+    int bodyH = lroundf(80 * sy), bodyW = lroundf(96 * (2.0f - sy));
+    int lift = lroundf(air * 34);
+    int feet = ground - lift, bodyBottom = feet - 12, bodyY = bodyBottom - bodyH, bodyX = cx - bodyW / 2;
+    lv_obj_set_size(m.body, bodyW, bodyH);
+    lv_obj_set_pos(m.body, bodyX, bodyY);
+    lv_obj_set_pos(m.legL, cx - 30, bodyBottom - 1);
+    lv_obj_set_pos(m.legR, cx + 16, bodyBottom - 1);
+    int armY = bodyY + bodyH * 32 / 100 - lroundf(air * 14);
+    lv_obj_set_pos(m.armL, bodyX - 14, armY);
+    lv_obj_set_pos(m.armR, bodyX + bodyW - 2, armY);
+    bool blink = fmodf(t, 3.4f) > 3.25f;
+    int eyeH = blink ? 3 : 18;
+    int eyeY = bodyY + bodyH * 35 / 100 + (blink ? 8 : 0);
+    lv_obj_set_size(m.eyeL, 12, eyeH);
+    lv_obj_set_size(m.eyeR, 12, eyeH);
+    lv_obj_set_pos(m.eyeL, bodyX + bodyW * 25 / 100, eyeY);
+    lv_obj_set_pos(m.eyeR, bodyX + bodyW * 62 / 100, eyeY);
+    int sw = lroundf(80 * (1.0f - 0.4f * air));
+    lv_obj_set_size(m.shadow, sw, 8);
+    lv_obj_set_pos(m.shadow, cx - sw / 2, ground - 3);
+    for (lv_obj_t *o : {m.body, m.armL, m.armR, m.legL, m.legR}) lv_obj_set_style_bg_color(o, COL(color), 0);
+    if (sweat) { lv_obj_remove_flag(m.drop, LV_OBJ_FLAG_HIDDEN); lv_obj_set_pos(m.drop, bodyX + bodyW - 10, bodyY + 4 + (int)fmodf(t * 22, 16)); }
+    else lv_obj_add_flag(m.drop, LV_OBJ_FLAG_HIDDEN);
+}
+
 // ---- Splash ---------------------------------------------------------------
 
-static lv_obj_t *mascot, *eyeL, *eyeR, *drop, *splash_sub;
+static Mascot splashMascot;
+static lv_obj_t *splash_sub;
 
 static void build_splash() {
     lv_obj_t *s = scr[S_SPLASH];
-    mascot = box(s, 112, 44, 96, 80, K_DIM, 14);
-    box(mascot, -16, 26, 16, 22, K_DIM, 6);   // arms
-    box(mascot, 96, 26, 16, 22, K_DIM, 6);
-    box(mascot, 18, 80, 14, 12, K_DIM);
-    box(mascot, 64, 80, 14, 12, K_DIM);
-    eyeL = box(mascot, 24, 28, 12, 18, K_BG, 2);
-    eyeR = box(mascot, 60, 28, 12, 18, K_BG, 2);
-    drop = box(mascot, 84, 6, 6, 6, 0x6EAAFF, LV_RADIUS_CIRCLE);
+    splashMascot = build_mascot(s);
     lv_obj_t *name = label(s, &inter_22, K_FG, "ClawTicker");
-    lv_obj_align(name, LV_ALIGN_TOP_MID, 0, 156);
+    lv_obj_align(name, LV_ALIGN_TOP_MID, 0, 152);
     splash_sub = label(s, &inter_14, K_DIM, "Waiting for data");
-    lv_obj_align(splash_sub, LV_ALIGN_TOP_MID, 0, 186);
+    lv_obj_align(splash_sub, LV_ALIGN_TOP_MID, 0, 184);
 }
 
 static void update_splash(const Data &d, bool have) {
     int pct = have && d.cardCount && !d.cards[0].off ? d.cards[0].session : 0;
-    float t = millis() / 1000.0f;
-    float speed = pct >= 85 ? 6.0f : pct >= 60 ? 3.0f : 1.5f;
-    lv_obj_set_y(mascot, 44 + lroundf(sinf(t * speed) * 4));
-    uint32_t body = !have ? K_DIM : pct >= 85 ? K_BAD : pct >= 60 ? K_ACCENT : K_GOOD;
-    // all body parts are the mascot's children plus the mascot itself
-    lv_obj_set_style_bg_color(mascot, COL(body), 0);
-    for (uint32_t i = 0; i < lv_obj_get_child_count(mascot); i++) {
-        lv_obj_t *ch = lv_obj_get_child(mascot, i);
-        if (ch == eyeL || ch == eyeR || ch == drop) continue;
-        lv_obj_set_style_bg_color(ch, COL(body), 0);
-    }
-    bool blink = fmodf(t, 3.4f) > 3.25f;
-    for (lv_obj_t *e : {eyeL, eyeR}) {
-        lv_obj_set_height(e, blink ? 3 : 18);
-        lv_obj_set_y(e, blink ? 36 : 28);
-    }
-    if (pct >= 85) { lv_obj_remove_flag(drop, LV_OBJ_FLAG_HIDDEN); lv_obj_set_y(drop, 6 + (int)fmodf(t * 20, 14)); }
-    else lv_obj_add_flag(drop, LV_OBJ_FLAG_HIDDEN);
+    uint32_t body = !have ? K_DIM : pct >= 85 ? K_BAD : pct >= 60 ? K_AMBER : K_GOOD;
+    float rate = pct >= 85 ? 1.3f : pct >= 60 ? 0.9f : 0.55f;
+    update_mascot(splashMascot, 160, 142, millis() / 1000.0f, body, rate, pct >= 85);
     char buf[40];
     if (have && d.cardCount && !d.cards[0].off) snprintf(buf, sizeof(buf), "%s %d%% of session", d.cards[0].name, pct);
     else snprintf(buf, sizeof(buf), "Waiting for data");
     set_text(splash_sub, buf);
-    lv_obj_align(splash_sub, LV_ALIGN_TOP_MID, 0, 186);
+    lv_obj_align(splash_sub, LV_ALIGN_TOP_MID, 0, 184);
 }
+
+// ---- Alert: an agent just finished a turn ----------------------------------
+
+static Mascot alertMascot;
+static lv_obj_t *alert_icon, *alert_title, *alert_sub;
+static uint32_t alertUntil = 0, alertTint = K_CLAUDE;
+static const uint32_t ALERT_MS = 30000;
+
+static void build_alert() {
+    lv_obj_t *s = scr[S_ALERT];
+    alertMascot = build_mascot(s);
+    alert_icon = icon(s, &icon_burst40, K_CLAUDE);
+    lv_obj_set_pos(alert_icon, 14, 12);
+    alert_title = label(s, &inter_22, K_FG, "");
+    alert_sub = label(s, &inter_14, K_DIM, "Your turn. Tap to dismiss");
+    lv_obj_align(alert_sub, LV_ALIGN_TOP_MID, 0, 192);
+}
+
+static void show_alert(const char *kind) {
+    bool codex = strcmp(kind, "codex") == 0;
+    alertTint = codex ? K_CODEX : K_CLAUDE;
+    lv_obj_set_style_bg_color(scr[S_ALERT], COL(mix(K_BG, alertTint, 38)), 0);
+    lv_image_set_src(alert_icon, codex ? &icon_term40 : &icon_burst40);
+    lv_obj_set_style_image_recolor(alert_icon, COL(alertTint), 0);
+    set_text(alert_title, codex ? "Codex finished" : "Claude finished");
+    lv_obj_align(alert_title, LV_ALIGN_TOP_MID, 0, 158);
+    if (current != S_ALERT) alertReturn = current;
+    alertUntil = millis() + ALERT_MS;
+    hw_set_brightness(255);
+    show(S_ALERT);
+}
+
+static void dismiss_alert() {
+    hw_set_brightness(BRIGHTNESS_LEVELS[cfg.brightness]);
+    show(alertReturn == S_ALERT ? S_AI : alertReturn);
+}
+
+void ui_test_alert(const char *kind) { show_alert(kind); }
 
 // ---- Settings -------------------------------------------------------------
 
@@ -492,10 +634,17 @@ void ui_init() {
     scr[S_COIN] = make_screen(S_COIN, "Coin");
     scr[S_SPLASH] = make_screen(S_SPLASH, "");
     scr[S_SETTINGS] = make_screen(S_SETTINGS, "Settings");
+    scr[S_ALERT] = lv_obj_create(nullptr);
+    lv_obj_remove_style_all(scr[S_ALERT]);
+    lv_obj_set_size(scr[S_ALERT], SCREEN_W, SCREEN_H);
+    lv_obj_set_style_bg_opa(scr[S_ALERT], LV_OPA_COVER, 0);
+    lv_obj_add_flag(scr[S_ALERT], LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_add_event_cb(scr[S_ALERT], on_screen_tap, LV_EVENT_CLICKED, nullptr);
     build_ai();
     build_coin();
     build_splash();
     build_settings();
+    build_alert();
     lv_screen_load(scr[S_AI]);
 }
 
@@ -527,13 +676,22 @@ void ui_draw_portal() {
 
 void ui_tick() {
     static uint32_t lastRefresh = 0;
+    static bool alertInit = false;
+    static uint16_t lastAlert = 0;
     uint32_t now = millis();
-    uint32_t interval = current == S_SPLASH ? 50 : 500;
-    if (now - lastRefresh >= interval) {
+    bool animated = current == S_SPLASH || current == S_ALERT;
+    if (now - lastRefresh >= (animated ? 40u : 500u)) {
         lastRefresh = now;
         Data d;
         bool have = net_get(d);
-        refresh_chrome(current, d, have);
+        if (have) {
+            if (!alertInit) { lastAlert = d.alertId; alertInit = true; }   // no alert for a finish from before boot
+            else if (d.alertId != lastAlert && d.alertId > 0) { lastAlert = d.alertId; show_alert(d.alertKind); }
+        }
+        if (current == S_ALERT) {
+            update_mascot(alertMascot, 160, 142, now / 1000.0f, alertTint, 1.1f, false);
+            if (now > alertUntil) dismiss_alert();
+        } else refresh_chrome(current, d, have);
         switch (current) {
             case S_AI: update_ai(d, have); break;
             case S_COIN: update_coin(d, have); break;

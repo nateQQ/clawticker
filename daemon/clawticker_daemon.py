@@ -16,6 +16,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import claude_usage  # noqa: E402
 import codex_usage   # noqa: E402
 import coins as coins_mod  # noqa: E402
+import agent_events  # noqa: E402
 
 CONFIG_PATH = os.path.expanduser(os.environ.get("CLAWTICKER_CONFIG", "~/.config/clawticker/config"))
 DEFAULTS = {
@@ -46,7 +47,7 @@ def read_config(path=CONFIG_PATH):
     return cfg
 
 
-def build_payload(cfg, claude_card, codex_card, coin_rows, now=None):
+def build_payload(cfg, claude_card, codex_card, coin_rows, alert=None, now=None):
     """Assemble the JSON the firmware reads. Schema is documented in docs/payload.md."""
     now = time.time() if now is None else now
     cards = []
@@ -56,23 +57,26 @@ def build_payload(cfg, claude_card, codex_card, coin_rows, now=None):
         cards.append({"n": "Claude", "s": 0, "sr": -1, "w": 0, "wr": -1, "off": 1})
     if cfg["display"] == "multi":
         cards.append(codex_card or {"n": "Codex", "s": 0, "sr": -1, "w": 0, "wr": -1, "off": 1})
-    return {
+    payload = {
         "v": 1,
         "mode": cfg["display"],
         "t": int(now) + time.localtime(now).tm_gmtoff,   # local wall-clock seconds
         "ai": cards,
         "coins": coin_rows or [],
     }
+    if alert:
+        payload["al"] = {"i": alert["i"], "k": alert["k"]}
+    return payload
 
 
 class State:
     def __init__(self):
         self.lock = threading.Lock()
-        self.claude = self.codex = self.coin_rows = None
+        self.claude = self.codex = self.coin_rows = self.alert = None
 
     def snapshot(self):
         with self.lock:
-            return self.claude, self.codex, self.coin_rows
+            return self.claude, self.codex, self.coin_rows, self.alert
 
 
 def _loop(interval, work):
@@ -106,7 +110,14 @@ def start_workers(state):
             with state.lock:
                 state.coin_rows = rows
 
-    for interval, fn in ((AI_INTERVAL, claude), (CODEX_INTERVAL, codex), (COIN_INTERVAL, coins)):
+    watcher = agent_events.Watcher()
+
+    def alerts():
+        latest = watcher.poll()
+        with state.lock:
+            state.alert = latest
+
+    for interval, fn in ((AI_INTERVAL, claude), (CODEX_INTERVAL, codex), (COIN_INTERVAL, coins), (3, alerts)):
         threading.Thread(target=_loop, args=(interval, fn), daemon=True).start()
 
 

@@ -36,6 +36,8 @@ static void handle_command(String line) {
         ui_snapshot_serial();
     } else if (line == "settings") {
         ui_toggle_settings();
+    } else if (line.startsWith("alert")) {
+        ui_test_alert(line.length() > 6 ? line.substring(6).c_str() : "claude");
     } else if (line == "next") {
         ui_next_screen();
     } else if (line == "reset") {

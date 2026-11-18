@@ -13,7 +13,8 @@ CoinGecko ───────────────────────�
 |---|---|
 | Claude, or AI usage | Session (5h) and weekly (7d) usage, bars, time to reset. Pick one at install: **Claude only**, or **Claude + Codex** side by side |
 | Coin | 1 to 4 coins with price and 24h change (default BTC) |
-| Splash | A small animated mascot that gets nervous as your session fills up |
+| Splash | A hopping mascot that hops faster and sweats as your session fills up |
+| Finished | When a Claude Code or Codex turn ends, the board shows a full screen "Your turn" with the mascot. Tap to dismiss, it also closes after 30 seconds. Detected from the tools' local session logs, no hooks to set up |
 | Settings | Brightness, display mode, reset Wi-Fi setup |
 
 Tap the screen to switch screens, tap the gear (bottom right) for Settings. The BOOT button also switches screens.
@@ -43,6 +44,7 @@ Change what is shown later by editing `~/.config/clawticker/config` (see `daemon
 
 - **Claude:** sends a one-token request with the OAuth token Claude Code already stored on your computer, and reads the plan utilization from the response headers. This costs a negligible amount of quota (one request every 2 minutes). It relies on API behavior that is not an official usage endpoint and may change.
 - **Codex:** reads rate-limit info that the Codex CLI writes to `~/.codex/sessions`.
+- **Finished alert:** the daemon watches the newest session logs under `~/.claude/projects` and `~/.codex/sessions` for a turn that just ended.
 - **Coins:** CoinGecko public API, cached by the daemon.
 
 Your token never leaves your computer except to `api.anthropic.com`. The daemon listens on your local network without a password, so only run it on a network you trust.

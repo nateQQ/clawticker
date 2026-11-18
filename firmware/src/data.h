@@ -22,5 +22,7 @@ struct Data {
     uint8_t coinCount = 0;
     Coin coins[4];
     uint32_t localTime = 0;       // seconds of local wall-clock at receivedAt
+    uint16_t alertId = 0;         // bumps each time an agent turn finishes
+    char alertKind[8] = "";       // "claude" or "codex"
     uint32_t receivedAt = 0;      // millis() of last good poll, 0 = never
 };

@@ -30,6 +30,8 @@ static void parse(const String &body) {
         k.price = c["p"] | 0.0;
         k.change24h = c["c"] | 0.0f;
     }
+    d.alertId = doc["al"]["i"] | 0;
+    strlcpy(d.alertKind, doc["al"]["k"] | "", sizeof(d.alertKind));
     d.localTime = doc["t"] | 0;
     d.receivedAt = millis() ? millis() : 1;
     xSemaphoreTake(lock, portMAX_DELAY);

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Capture the board's screen over USB serial and save it as PNG.
-Usage: python3 tools/shot.py /dev/cu.usbmodemXXXX out.png [--next N] [--settings]
+Usage: python3 tools/shot.py /dev/cu.usbmodemXXXX out.png [--next N] [--settings] [--cmd 'alert codex']
 Needs pyserial and Pillow (pip install pyserial pillow)."""
 import sys, time
 import serial
@@ -12,6 +12,8 @@ s = serial.Serial(port, 115200, timeout=2)
 time.sleep(0.3)
 for _ in range(presses):
     s.write(b"next\n"); time.sleep(0.8)
+if "--cmd" in sys.argv:
+    s.write(sys.argv[sys.argv.index("--cmd") + 1].encode() + b"\n"); time.sleep(1.2)
 if "--settings" in sys.argv:
     s.write(b"settings\n"); time.sleep(1.0)
 s.reset_input_buffer()

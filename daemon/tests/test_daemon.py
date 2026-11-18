@@ -3,7 +3,7 @@ import sys
 import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
-import claude_usage, codex_usage, coins  # noqa: E402
+import claude_usage, codex_usage, coins, agent_events  # noqa: E402
 import clawticker_daemon as d  # noqa: E402
 
 
@@ -66,6 +66,36 @@ class Payload(unittest.TestCase):
             self.assertEqual(d.read_config(path)["display"], "claude")
         finally:
             os.remove(path)
+
+
+class AgentEvents(unittest.TestCase):
+    def test_claude_end_turn_vs_tool_use(self):
+        done = '{"type":"assistant","uuid":"u1","message":{"stop_reason":"end_turn"}}'
+        busy = '{"type":"assistant","uuid":"u2","message":{"stop_reason":"tool_use"}}'
+        self.assertEqual(agent_events.claude_turn_end([done]), "u1")
+        self.assertIsNone(agent_events.claude_turn_end([done, busy]))
+
+    def test_claude_ignores_subagent(self):
+        side = '{"type":"assistant","isSidechain":true,"uuid":"s","message":{"stop_reason":"end_turn"}}'
+        self.assertIsNone(agent_events.claude_turn_end([side]))
+
+    def test_codex_complete_then_new_turn(self):
+        done = '{"type":"event_msg","timestamp":"T1","payload":{"type":"task_complete"}}'
+        start = '{"type":"event_msg","payload":{"type":"task_started"}}'
+        self.assertEqual(agent_events.codex_turn_end([start, done]), "T1")
+        self.assertIsNone(agent_events.codex_turn_end([done, start]))
+
+    def test_watcher_baseline_then_alert(self):
+        import tempfile, json, time
+        with tempfile.TemporaryDirectory() as tmp:
+            p = os.path.join(tmp, "s.jsonl")
+            line = lambda u: json.dumps({"type": "assistant", "uuid": u, "message": {"stop_reason": "end_turn"}}) + "\n"
+            open(p, "w").write(line("a"))
+            w = agent_events.Watcher(claude_glob=os.path.join(tmp, "*.jsonl"), codex_glob=os.path.join(tmp, "none*.jsonl"))
+            self.assertIsNone(w.poll())               # baseline, old finish is not replayed
+            open(p, "a").write(line("b"))
+            self.assertEqual(w.poll()["k"], "claude")
+            self.assertEqual(w.poll()["i"], 1)        # same turn is not counted twice
 
 
 if __name__ == "__main__":
