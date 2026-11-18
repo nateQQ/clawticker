@@ -44,11 +44,12 @@ bool hw_touch(int &x, int &y) {
     if (Wire.endTransmission(false) != 0) return false;
     if (Wire.requestFrom((uint8_t)TOUCH_ADDR, (uint8_t)5) != 5) return false;
     for (auto &b : buf) b = Wire.read();
-    if ((buf[0] & 0x0F) == 0) return false;
+    uint8_t fingers = buf[0] & 0x0F;
+    if (fingers == 0 || fingers > 2) return false;   // 0 = no touch, >2 = garbage sample
     int rx = ((buf[1] & 0x0F) << 8) | buf[2];
     int ry = ((buf[3] & 0x0F) << 8) | buf[4];
-    x = constrain(ry, 0, SCREEN_W - 1);
-    y = constrain(SCREEN_H - 1 - rx, 0, SCREEN_H - 1);
+    x = constrain(SCREEN_W - 1 - ry, 0, SCREEN_W - 1);
+    y = constrain(rx, 0, SCREEN_H - 1);
     return true;
 }
 
