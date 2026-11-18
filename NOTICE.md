@@ -2,6 +2,10 @@
 
 - `firmware/src/fonts/inter_*.c`: bitmap fonts generated from Inter by Rasmus
   Andersson (SIL Open Font License 1.1, see `firmware/src/fonts/OFL-Inter.txt`).
+- `assets/mascot/claudepix-frames.json`: ClaudePix animation library by @amaanbuilds
+  (https://claudepix.vercel.app/), 20x20 pixel sprites. ClaudePix states no
+  licence, so the art is included for credit only, without a redistribution
+  grant, and will be replaced on request. See `assets/mascot/README.md`.
 - `assets/logos/*.svg`: Claude and Codex marks from lobe-icons (MIT, see
   `assets/logos/LICENSE-lobe-icons.txt`). The marks are trademarks of Anthropic
   and OpenAI and only identify the services whose usage is displayed.

@@ -7,6 +7,7 @@
 #include "net.h"
 #include "pins.h"
 #include "settings.h"
+#include "sprites.h"
 
 LV_FONT_DECLARE(inter_12);
 LV_FONT_DECLARE(inter_14);
@@ -412,75 +413,104 @@ static void update_coin(const Data &d, bool have) {
     }
 }
 
-// ---- Mascot (splash + alert) ----------------------------------------------
+// ---- Sprite player (ClaudePix 20x20 animations) -------------------------------
 
-struct Mascot { lv_obj_t *shadow, *body, *armL, *armR, *legL, *legR, *eyeL, *eyeR, *drop; };
+struct Player {
+    lv_obj_t *img;
+    lv_image_dsc_t dsc;
+    uint8_t buf[SPRITE_SIZE * SPRITE_SIZE * 4];   // ARGB8888, rewritten for every frame
+    int preset = 0, frame = 0, loops = 0;
+    uint32_t nextAt = 0;
+};
 
-static Mascot build_mascot(lv_obj_t *p) {
-    Mascot m;
-    m.shadow = box(p, 0, 0, 80, 8, 0x1A1A1A, LV_RADIUS_CIRCLE);
-    m.legL = box(p, 0, 0, 14, 12, K_DIM);
-    m.legR = box(p, 0, 0, 14, 12, K_DIM);
-    m.armL = box(p, 0, 0, 16, 22, K_DIM, 6);
-    m.armR = box(p, 0, 0, 16, 22, K_DIM, 6);
-    m.body = box(p, 0, 0, 96, 80, K_DIM, 14);
-    m.eyeL = box(p, 0, 0, 12, 18, K_BG, 2);
-    m.eyeR = box(p, 0, 0, 12, 18, K_BG, 2);
-    m.drop = box(p, 0, 0, 6, 9, 0x6EAAFF, LV_RADIUS_CIRCLE);
-    return m;
+static int sprite_index(const char *slug) {
+    for (int i = 0; i < SPRITE_COUNT; i++) if (!strcmp(SPRITES[i].slug, slug)) return i;
+    return 0;
 }
 
-// One hop every 1/rate seconds: stretch in the air, squash on landing, arms up.
-static void update_mascot(Mascot &m, int cx, int ground, float t, uint32_t color, float rate, bool sweat) {
-    float p = fmodf(t * rate, 1.0f);
-    float air = 0, squash = 0;
-    if (p < 0.7f) { float q = p / 0.7f; air = 4 * q * (1 - q); }
-    else squash = sinf((p - 0.7f) / 0.3f * (float)M_PI);
-    float sy = 1.0f + 0.06f * air - 0.16f * squash;
-    int bodyH = lroundf(80 * sy), bodyW = lroundf(96 * (2.0f - sy));
-    int lift = lroundf(air * 34);
-    int feet = ground - lift, bodyBottom = feet - 12, bodyY = bodyBottom - bodyH, bodyX = cx - bodyW / 2;
-    lv_obj_set_size(m.body, bodyW, bodyH);
-    lv_obj_set_pos(m.body, bodyX, bodyY);
-    lv_obj_set_pos(m.legL, cx - 30, bodyBottom - 1);
-    lv_obj_set_pos(m.legR, cx + 16, bodyBottom - 1);
-    int armY = bodyY + bodyH * 32 / 100 - lroundf(air * 14);
-    lv_obj_set_pos(m.armL, bodyX - 14, armY);
-    lv_obj_set_pos(m.armR, bodyX + bodyW - 2, armY);
-    bool blink = fmodf(t, 3.4f) > 3.25f;
-    int eyeH = blink ? 3 : 18;
-    int eyeY = bodyY + bodyH * 35 / 100 + (blink ? 8 : 0);
-    lv_obj_set_size(m.eyeL, 12, eyeH);
-    lv_obj_set_size(m.eyeR, 12, eyeH);
-    lv_obj_set_pos(m.eyeL, bodyX + bodyW * 25 / 100, eyeY);
-    lv_obj_set_pos(m.eyeR, bodyX + bodyW * 62 / 100, eyeY);
-    int sw = lroundf(80 * (1.0f - 0.4f * air));
-    lv_obj_set_size(m.shadow, sw, 8);
-    lv_obj_set_pos(m.shadow, cx - sw / 2, ground - 3);
-    for (lv_obj_t *o : {m.body, m.armL, m.armR, m.legL, m.legR}) lv_obj_set_style_bg_color(o, COL(color), 0);
-    if (sweat) { lv_obj_remove_flag(m.drop, LV_OBJ_FLAG_HIDDEN); lv_obj_set_pos(m.drop, bodyX + bodyW - 10, bodyY + 4 + (int)fmodf(t * 22, 16)); }
-    else lv_obj_add_flag(m.drop, LV_OBJ_FLAG_HIDDEN);
+static void player_draw(Player &p) {
+    const sprite_t &sp = SPRITES[p.preset];
+    const uint8_t *px = sp.pixels + p.frame * SPRITE_SIZE * SPRITE_SIZE;
+    for (int i = 0; i < SPRITE_SIZE * SPRITE_SIZE; i++) {
+        const uint8_t *c = sp.palette + px[i] * 4;
+        p.buf[i * 4 + 0] = c[2];
+        p.buf[i * 4 + 1] = c[1];
+        p.buf[i * 4 + 2] = c[0];
+        p.buf[i * 4 + 3] = c[3];
+    }
+    lv_obj_invalidate(p.img);
+}
+
+// scale 6 draws each sprite pixel as 6x6 screen pixels. (cx, cy) is the sprite center.
+static void player_init(Player &p, lv_obj_t *parent, int cx, int cy, int scale) {
+    memset(&p.dsc, 0, sizeof(p.dsc));
+    p.dsc.header.magic = LV_IMAGE_HEADER_MAGIC;
+    p.dsc.header.cf = LV_COLOR_FORMAT_ARGB8888;
+    p.dsc.header.w = p.dsc.header.h = SPRITE_SIZE;
+    p.dsc.header.stride = SPRITE_SIZE * 4;
+    p.dsc.data_size = sizeof(p.buf);
+    p.dsc.data = p.buf;
+    p.img = lv_image_create(parent);
+    lv_image_set_src(p.img, &p.dsc);
+    lv_image_set_pivot(p.img, SPRITE_SIZE / 2, SPRITE_SIZE / 2);
+    lv_image_set_scale(p.img, 256 * scale);
+    lv_image_set_antialias(p.img, false);   // keep the pixels square
+    lv_obj_set_pos(p.img, cx - SPRITE_SIZE / 2, cy - SPRITE_SIZE / 2);
+    player_draw(p);
+}
+
+static void player_set(Player &p, int preset) {
+    p.preset = preset;
+    p.frame = p.loops = 0;
+    p.nextAt = 0;
+}
+
+// Advance when the frame's hold time has passed. Returns true when a loop just finished.
+static bool player_tick(Player &p, uint32_t now) {
+    if (p.nextAt && now < p.nextAt) return false;
+    const sprite_t &sp = SPRITES[p.preset];
+    bool wrapped = false;
+    if (p.nextAt) {
+        p.frame = (p.frame + 1) % sp.frames;
+        if (p.frame == 0) { p.loops++; wrapped = true; }
+    }
+    p.nextAt = now + sp.hold_ms[p.frame];
+    player_draw(p);
+    return wrapped;
 }
 
 // ---- Splash ---------------------------------------------------------------
 
-static Mascot splashMascot;
+static Player splashPlayer;
 static lv_obj_t *splash_sub;
+static int splashMood = -1, splashPick = 0;
+
+// Which animations suit each mood; the splash rotates through its list.
+static const char *ANIM_CALM[] = {"idle_breathe", "idle_blink", "idle_look_around", "expression_wink", "dance_sway", "idle_breathe"};
+static const char *ANIM_BUSY[] = {"work_coding", "work_think"};
+static const char *ANIM_HOT[] = {"expression_surprise", "work_think"};
+static const char *ANIM_NODATA[] = {"expression_sleep"};
 
 static void build_splash() {
     lv_obj_t *s = scr[S_SPLASH];
-    splashMascot = build_mascot(s);
+    player_init(splashPlayer, s, 160, 92, 6);
+    player_set(splashPlayer, sprite_index("idle_breathe"));
     lv_obj_t *name = label(s, &inter_22, K_FG, "ClawTicker");
-    lv_obj_align(name, LV_ALIGN_TOP_MID, 0, 152);
+    lv_obj_align(name, LV_ALIGN_TOP_MID, 0, 156);
     splash_sub = label(s, &inter_14, K_DIM, "Waiting for data");
     lv_obj_align(splash_sub, LV_ALIGN_TOP_MID, 0, 184);
 }
 
 static void update_splash(const Data &d, bool have) {
     int pct = have && d.cardCount && !d.cards[0].off ? d.cards[0].session : 0;
-    uint32_t body = !have ? K_DIM : pct >= 85 ? K_BAD : pct >= 60 ? K_AMBER : K_GOOD;
-    float rate = pct >= 85 ? 1.3f : pct >= 60 ? 0.9f : 0.55f;
-    update_mascot(splashMascot, 160, 142, millis() / 1000.0f, body, rate, pct >= 85);
+    int mood = !have ? 3 : pct >= 85 ? 2 : pct >= 60 ? 1 : 0;
+    const char **list = mood == 3 ? ANIM_NODATA : mood == 2 ? ANIM_HOT : mood == 1 ? ANIM_BUSY : ANIM_CALM;
+    int n = mood == 3 ? 1 : mood == 2 ? 2 : mood == 1 ? 2 : 6;
+    if (mood != splashMood) { splashMood = mood; splashPick = 0; player_set(splashPlayer, sprite_index(list[0])); }
+    if (player_tick(splashPlayer, millis()) && splashPlayer.loops >= 2 && n > 1) {   // rotate after two plays
+        splashPick = (splashPick + 1) % n;
+        player_set(splashPlayer, sprite_index(list[splashPick]));
+    }
     char buf[40];
     if (have && d.cardCount && !d.cards[0].off) snprintf(buf, sizeof(buf), "%s %d%% of session", d.cards[0].name, pct);
     else snprintf(buf, sizeof(buf), "Waiting for data");
@@ -490,14 +520,15 @@ static void update_splash(const Data &d, bool have) {
 
 // ---- Alert: an agent just finished a turn ----------------------------------
 
-static Mascot alertMascot;
+static Player alertPlayer;
 static lv_obj_t *alert_icon, *alert_title, *alert_sub;
-static uint32_t alertUntil = 0, alertTint = K_CLAUDE;
+static uint32_t alertUntil = 0;
 static const uint32_t ALERT_MS = 30000;
 
 static void build_alert() {
     lv_obj_t *s = scr[S_ALERT];
-    alertMascot = build_mascot(s);
+    player_init(alertPlayer, s, 160, 84, 6);
+    player_set(alertPlayer, sprite_index("dance_bounce"));
     alert_icon = icon(s, &icon_burst40, K_CLAUDE);
     lv_obj_set_pos(alert_icon, 14, 12);
     alert_title = label(s, &inter_22, K_FG, "");
@@ -507,13 +538,13 @@ static void build_alert() {
 
 static void show_alert(const char *kind) {
     bool codex = strcmp(kind, "codex") == 0;
-    alertTint = codex ? K_CODEX : K_CLAUDE;
     lv_image_set_src(alert_icon, codex ? &icon_term40 : &icon_burst40);
-    lv_obj_set_style_image_recolor(alert_icon, COL(alertTint), 0);
+    lv_obj_set_style_image_recolor(alert_icon, COL(codex ? K_CODEX : K_CLAUDE), 0);
     set_text(alert_title, codex ? "Codex finished" : "Claude finished");
     lv_obj_align(alert_title, LV_ALIGN_TOP_MID, 0, 158);
     if (current != S_ALERT) alertReturn = current;
     alertUntil = millis() + ALERT_MS;
+    player_set(alertPlayer, sprite_index("dance_bounce"));
     hw_set_brightness(255);
     show(S_ALERT);
 }
@@ -686,7 +717,7 @@ void ui_tick() {
             else if (d.alertId != lastAlert && d.alertId > 0) { lastAlert = d.alertId; show_alert(d.alertKind); }
         }
         if (current == S_ALERT) {
-            update_mascot(alertMascot, 160, 142, now / 1000.0f, alertTint, 1.1f, false);
+            player_tick(alertPlayer, now);
             if (now > alertUntil) dismiss_alert();
         } else refresh_chrome(current, d, have);
         switch (current) {
