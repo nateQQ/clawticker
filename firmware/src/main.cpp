@@ -32,6 +32,12 @@ static void handle_command(String line) {
         cfg.port = line.substring(5).toInt();
         settings_save();
         Serial.println("saved, send `reset` to apply");
+    } else if (line == "shot") {
+        ui_snapshot_serial();
+    } else if (line == "settings") {
+        ui_toggle_settings();
+    } else if (line == "next") {
+        ui_next_screen();
     } else if (line == "reset") {
         ESP.restart();
     } else if (line.length()) {

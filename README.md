@@ -60,6 +60,7 @@ Your token never leaves your computer except to `api.anthropic.com`. The daemon 
 ```sh
 python3 -I -m unittest discover -s daemon/tests   # daemon tests
 cd firmware && pio run                              # build firmware
+python3 tools/shot.py /dev/cu.usbmodemXXXX out.png  # screenshot of the board over USB (needs pyserial, pillow)
 ```
 
 Payload format: [docs/payload.md](docs/payload.md).

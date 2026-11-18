@@ -1,11 +1,10 @@
 #include "hw.h"
 #include "pins.h"
+#include <Arduino_GFX_Library.h>
 #include <Wire.h>
 
 static Arduino_DataBus *bus;
 static Arduino_ILI9341 *panel;
-static Arduino_Canvas *canvas;
-Arduino_GFX *g;
 
 void hw_init() {
     pinMode(BOOT_BTN, INPUT_PULLUP);
@@ -16,9 +15,6 @@ void hw_init() {
     panel = new Arduino_ILI9341(bus, GFX_NOT_DEFINED, 3, true, 240, 320);
     panel->begin();
     panel->fillScreen(0x0000);
-    canvas = new Arduino_Canvas(SCREEN_W, SCREEN_H, panel);
-    canvas->begin(GFX_SKIP_OUTPUT_BEGIN);
-    g = canvas;
     ledcAttach(LCD_BL, 5000, 8);
     hw_set_brightness(200);
 
@@ -30,7 +26,9 @@ void hw_init() {
     delay(50);
 }
 
-void hw_flush() { canvas->flush(); }
+void hw_draw(int x, int y, int w, int h, const uint16_t *pixels) {
+    panel->draw16bitRGBBitmap(x, y, (uint16_t *)pixels, w, h);
+}
 
 void hw_set_brightness(uint8_t level) { ledcWrite(LCD_BL, level); }
 
