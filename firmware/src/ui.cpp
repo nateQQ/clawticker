@@ -45,6 +45,7 @@ static lv_obj_t *box(lv_obj_t *parent, int x, int y, int w, int h, uint32_t bg, 
     lv_obj_set_style_bg_color(o, COL(bg), 0);
     lv_obj_set_style_bg_opa(o, LV_OPA_COVER, 0);
     lv_obj_set_style_radius(o, radius, 0);
+    lv_obj_remove_flag(o, LV_OBJ_FLAG_CLICKABLE);   // taps fall through to the screen (next screen)
     return o;
 }
 
@@ -114,8 +115,36 @@ static void fmt_price(char *out, size_t n, double p) {
 
 struct Chrome {
     lv_obj_t *title, *clock, *status, *statusIcon, *gear, *dots[CONTENT_SCREENS];
+    int verbIdx;
 };
 static Chrome chrome[S_COUNT];
+
+// Looping animations for the footer: the star turns continuously and each new word fades in.
+static void anim_rotate(void *obj, int32_t v) { lv_image_set_rotation((lv_obj_t *)obj, v); }
+static void anim_fade(void *obj, int32_t v) { lv_obj_set_style_text_opa((lv_obj_t *)obj, v, 0); }
+
+static void spin(lv_obj_t *img) {
+    lv_image_set_pivot(img, 6, 6);
+    lv_anim_t a;
+    lv_anim_init(&a);
+    lv_anim_set_var(&a, img);
+    lv_anim_set_exec_cb(&a, anim_rotate);
+    lv_anim_set_values(&a, 0, 3600);
+    lv_anim_set_duration(&a, 3200);
+    lv_anim_set_repeat_count(&a, LV_ANIM_REPEAT_INFINITE);
+    lv_anim_set_path_cb(&a, lv_anim_path_linear);
+    lv_anim_start(&a);
+}
+
+static void fade_in(lv_obj_t *label) {
+    lv_anim_t a;
+    lv_anim_init(&a);
+    lv_anim_set_var(&a, label);
+    lv_anim_set_exec_cb(&a, anim_fade);
+    lv_anim_set_values(&a, 0, 255);
+    lv_anim_set_duration(&a, 350);
+    lv_anim_start(&a);
+}
 
 static void dismiss_alert();
 
@@ -187,6 +216,8 @@ static lv_obj_t *make_screen(Screen id, const char *title) {
     lv_obj_t *mid = hrow(foot, 0, 0, 0, 26, 6, LV_FLEX_ALIGN_CENTER);
     lv_obj_set_flex_grow(mid, 1);
     c.statusIcon = icon(mid, &icon_burst12, K_ACCENT);
+    spin(c.statusIcon);
+    c.verbIdx = -1;
     c.status = label(mid, &inter_14, K_DIM);
     lv_obj_t *right = hrow(foot, 0, 0, 72, 26, 0, LV_FLEX_ALIGN_END);
     c.gear = label(right, &lv_font_montserrat_14, K_DIM, id == S_SETTINGS ? LV_SYMBOL_CLOSE : LV_SYMBOL_SETTINGS);
@@ -205,9 +236,11 @@ static void refresh_chrome(Screen id, const Data &d, bool have) {
         set_text(c.clock, buf);
     }
     bool fresh = have && net_age_ms() < 20000;
+    int verbIdx = ((millis() / 4500) * 7) % VERB_COUNT;
     char verb[32];
-    snprintf(verb, sizeof(verb), "%s...", VERBS[((millis() / 4500) * 7) % VERB_COUNT]);
+    snprintf(verb, sizeof(verb), "%s...", VERBS[verbIdx]);
     set_text(c.status, fresh ? verb : net_wifi_connected() ? "No data" : "Connecting...");
+    if (fresh && verbIdx != c.verbIdx) { c.verbIdx = verbIdx; fade_in(c.status); }
     set_color(c.status, fresh ? K_ACCENT : K_DIM);
     if (fresh) lv_obj_remove_flag(c.statusIcon, LV_OBJ_FLAG_HIDDEN);
     else lv_obj_add_flag(c.statusIcon, LV_OBJ_FLAG_HIDDEN);
@@ -246,6 +279,7 @@ static void make_card(CardUI &c, lv_obj_t *parent) {
     lv_obj_set_style_border_color(c.root, COL(K_BORDER), 0);
     lv_obj_set_style_border_width(c.root, 1, 0);
     lv_obj_set_style_radius(c.root, 10, 0);
+    lv_obj_remove_flag(c.root, LV_OBJ_FLAG_CLICKABLE);
     c.icon = icon(c.root, &icon_burst16, K_CLAUDE);
     lv_obj_set_pos(c.icon, 12, 9);
     c.name = label(c.root, &inter_14, K_FG);

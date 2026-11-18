@@ -16,8 +16,9 @@ static uint32_t perfGap = 0, perfTick = 0;   // worst-case timings since the las
 static void handle_command(String line) {
     line.trim();
     if (line == "status") {
-        Serial.printf("ssid=%s host=%s:%u wifi=%s ip=%s age=%lums\n", cfg.ssid.c_str(), cfg.host.c_str(), cfg.port,
-                      net_wifi_connected() ? "up" : "down", WiFi.localIP().toString().c_str(), (unsigned long)net_age_ms());
+        Serial.printf("ssid=%s host=%s:%u wifi=%s ip=%s age=%lums up=%lus reset=%d heap=%u\n", cfg.ssid.c_str(), cfg.host.c_str(),
+                      cfg.port, net_wifi_connected() ? "up" : "down", WiFi.localIP().toString().c_str(),
+                      (unsigned long)net_age_ms(), (unsigned long)(millis() / 1000), (int)esp_reset_reason(), ESP.getFreeHeap());
     } else if (line.startsWith("wifi ")) {
         String rest = line.substring(5);
         int bar = rest.indexOf('|');
@@ -34,6 +35,10 @@ static void handle_command(String line) {
         cfg.port = line.substring(5).toInt();
         settings_save();
         Serial.println("saved, send `reset` to apply");
+    } else if (line.startsWith("tap ")) {
+        int x = 0, y = 0;
+        sscanf(line.c_str() + 4, "%d %d", &x, &y);
+        hw_inject_touch(x, y, 120);
     } else if (line == "perf") {
         Serial.printf("loop gap max=%lums  ui_tick max=%lums  poll max=%lums\n", (unsigned long)perfGap,
                       (unsigned long)perfTick, (unsigned long)net_poll_max_ms());

@@ -53,7 +53,7 @@ Your token never leaves your computer except to `api.anthropic.com`. The daemon 
 
 ## Troubleshooting
 
-- **Set up over USB instead of the phone portal:** open a serial monitor (115200) and type `status`, `wifi <ssid>|<password>`, `host <ip>`, `port <n>`, then `reset`. `perf` prints worst-case UI timings. `portal` opens the setup page on the board's LAN address without erasing anything.
+- **Set up over USB instead of the phone portal:** open a serial monitor (115200) and type `status`, `wifi <ssid>|<password>`, `host <ip>`, `port <n>`, then `reset`. `perf` prints worst-case UI timings, `tap x y` sends a synthetic tap, `shot` dumps the screen (see `tools/shot.py`). `portal` opens the setup page on the board's LAN address without erasing anything.
 - **Board shows "Waiting for data":** is the daemon running? `curl http://localhost:8787/payload` on your computer should return JSON.
 - **Wrong Wi-Fi or computer address:** Settings, "Reset Wi-Fi setup" (tap twice), or hold the BOOT button for 5 seconds.
 - **Claude card shows `--`:** log in to Claude Code on the computer, then wait up to 2 minutes.

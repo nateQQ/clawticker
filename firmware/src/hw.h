@@ -6,3 +6,4 @@ void hw_draw(int x, int y, int w, int h, const uint16_t *pixels);   // RGB565 bl
 void hw_set_brightness(uint8_t level);                              // 0-255
 bool hw_touch(int &x, int &y);                                      // true while a finger is down
 bool hw_boot_pressed();
+void hw_inject_touch(int x, int y, uint32_t ms);   // dev: synthetic tap (`tap x y`)

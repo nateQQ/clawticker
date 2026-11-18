@@ -38,7 +38,12 @@ void hw_set_brightness(uint8_t level) { ledcWrite(LCD_BL, level); }
 static bool touchDown = false;
 static void touchReleased() { touchDown = false; }
 
+static int injX, injY;
+static uint32_t injUntil = 0;
+void hw_inject_touch(int x, int y, uint32_t ms) { injX = x; injY = y; injUntil = millis() + ms; }
+
 bool hw_touch(int &x, int &y) {
+    if (millis() < injUntil) { x = injX; y = injY; return true; }
     uint8_t buf[5];
     Wire.beginTransmission(TOUCH_ADDR);
     Wire.write(0x02);
