@@ -37,6 +37,9 @@ void hw_set_brightness(uint8_t level) { ledcWrite(LCD_BL, level); }
 // FT6336G: reg 0x02 = finger count, 0x03..0x06 = first touch X/Y (12 bit each).
 // The controller reports in the panel's native portrait frame (240x320), so
 // rotate into the 320x240 landscape frame used by the canvas.
+static bool touchDown = false;
+static void touchReleased() { touchDown = false; }
+
 bool hw_touch(int &x, int &y) {
     uint8_t buf[5];
     Wire.beginTransmission(TOUCH_ADDR);
@@ -45,11 +48,13 @@ bool hw_touch(int &x, int &y) {
     if (Wire.requestFrom((uint8_t)TOUCH_ADDR, (uint8_t)5) != 5) return false;
     for (auto &b : buf) b = Wire.read();
     uint8_t fingers = buf[0] & 0x0F;
-    if (fingers == 0 || fingers > 2) return false;   // 0 = no touch, >2 = garbage sample
+    if (fingers == 0 || fingers > 2) { touchReleased(); return false; }   // 0 = no touch, >2 = garbage
     int rx = ((buf[1] & 0x0F) << 8) | buf[2];
     int ry = ((buf[3] & 0x0F) << 8) | buf[4];
     x = constrain(SCREEN_W - 1 - ry, 0, SCREEN_W - 1);
     y = constrain(rx, 0, SCREEN_H - 1);
+    if (!touchDown) Serial.printf("touch raw=(%d,%d) screen=(%d,%d)\n", rx, ry, x, y);
+    touchDown = true;
     return true;
 }
 

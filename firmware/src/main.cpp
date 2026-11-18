@@ -1,4 +1,5 @@
 #include <Arduino.h>
+#include <WiFi.h>
 #include "hw.h"
 #include "net.h"
 #include "portal.h"
@@ -6,6 +7,46 @@
 #include "ui.h"
 
 static const uint32_t RESET_HOLD_MS = 5000;   // hold BOOT to erase Wi-Fi setup
+static const uint32_t SHORT_PRESS_MS = 800;   // BOOT short press = next screen
+
+// Serial setup, for when the phone portal is not convenient:
+//   status | wifi <ssid>|<password> | host <ip> | port <n> | reset
+static void handle_command(String line) {
+    line.trim();
+    if (line == "status") {
+        Serial.printf("ssid=%s host=%s:%u wifi=%s age=%lums\n", cfg.ssid.c_str(), cfg.host.c_str(), cfg.port,
+                      net_wifi_connected() ? "up" : "down", (unsigned long)net_age_ms());
+    } else if (line.startsWith("wifi ")) {
+        String rest = line.substring(5);
+        int bar = rest.indexOf('|');
+        cfg.ssid = bar < 0 ? rest : rest.substring(0, bar);
+        cfg.pass = bar < 0 ? "" : rest.substring(bar + 1);
+        settings_save();
+        Serial.println("saved, send `reset` to apply");
+    } else if (line.startsWith("host ")) {
+        cfg.host = line.substring(5);
+        cfg.host.trim();
+        settings_save();
+        Serial.println("saved, send `reset` to apply");
+    } else if (line.startsWith("port ")) {
+        cfg.port = line.substring(5).toInt();
+        settings_save();
+        Serial.println("saved, send `reset` to apply");
+    } else if (line == "reset") {
+        ESP.restart();
+    } else if (line.length()) {
+        Serial.println("commands: status | wifi <ssid>|<password> | host <ip> | port <n> | reset");
+    }
+}
+
+static void poll_serial() {
+    static String buf;
+    while (Serial.available()) {
+        char c = Serial.read();
+        if (c == '\n' || c == '\r') { handle_command(buf); buf = ""; }
+        else if (buf.length() < 120) buf += c;
+    }
+}
 
 void setup() {
     Serial.begin(115200);
@@ -24,7 +65,11 @@ void loop() {
             settings_clear_wifi();
             ESP.restart();
         }
-    } else pressedAt = 0;
+    } else {
+        if (pressedAt && millis() - pressedAt < SHORT_PRESS_MS) ui_next_screen();
+        pressedAt = 0;
+    }
+    poll_serial();
     ui_tick();
     delay(5);
 }

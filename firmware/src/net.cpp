@@ -43,7 +43,9 @@ static void poll_once() {
     http.setTimeout(3000);
     String url = "http://" + cfg.host + ":" + String(cfg.port) + "/payload";
     if (!http.begin(url)) return;
-    if (http.GET() == 200) parse(http.getString());
+    int code = http.GET();
+    if (code == 200) parse(http.getString());
+    else Serial.printf("poll %s -> HTTP %d (%s)\n", url.c_str(), code, HTTPClient::errorToString(code).c_str());
     http.end();
 }
 

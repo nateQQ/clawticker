@@ -1,8 +1,8 @@
 #include "ui.h"
 #include "data.h"
 #include "hw.h"
-#include "pins.h"
 #include "net.h"
+#include "pins.h"
 #include "settings.h"
 #include "fonts/FreeSans9pt7b.h"
 #include "fonts/FreeSansBold9pt7b.h"
@@ -12,15 +12,16 @@
 #include <math.h>
 
 #define RGB(r, gr, b) ((uint16_t)((((r) & 0xF8) << 8) | (((gr) & 0xFC) << 3) | ((b) >> 3)))
-static const uint16_t C_BG = 0x0000, C_FG = 0xFFFF;
-static const uint16_t C_MUTED = RGB(140, 140, 150), C_TRACK = RGB(42, 42, 48), C_LINE = RGB(60, 60, 66);
-static const uint16_t C_ACCENT = RGB(255, 159, 64);
-static const uint16_t C_GOOD = RGB(80, 200, 120), C_WARN = RGB(240, 190, 60), C_BAD = RGB(235, 80, 70);
+static const uint16_t C_BG = 0x0000, C_FG = RGB(250, 249, 245), C_DIM = RGB(176, 174, 165);
+static const uint16_t C_TRACK = RGB(38, 38, 38), C_BORDER = RGB(70, 70, 70);
+static const uint16_t C_ACCENT = RGB(242, 105, 30);
+static const uint16_t C_GOOD = RGB(95, 200, 90), C_WARN = RGB(245, 166, 35), C_BAD = RGB(230, 51, 41);
 
-enum Screen { S_AI, S_COIN, S_SPLASH, S_SETTINGS, S_COUNT };
+enum Screen { S_AI, S_COIN, S_SPLASH, S_SETTINGS };
+static const int CONTENT_SCREENS = 3;
 enum Align { LEFT, CENTER, RIGHT };
 
-static Screen screen = S_AI;
+static Screen screen = S_AI, prevScreen = S_AI;
 static uint32_t lastDraw = 0;
 static uint32_t confirmResetUntil = 0;
 
@@ -40,16 +41,18 @@ static void text(const char *s, int x, int top, const GFXfont *font, uint16_t co
 static uint16_t severity(int pct) { return pct >= 85 ? C_BAD : pct >= 60 ? C_WARN : C_GOOD; }
 
 static void bar(int x, int y, int w, int h, int pct, uint16_t color) {
-    g->fillRoundRect(x, y, w, h, h / 2, C_TRACK);
-    int fw = w * pct / 100;
-    if (pct > 0) g->fillRoundRect(x, y, max(fw, h), h, h / 2, color);
+    g->fillRoundRect(x, y, w, h, 3, C_TRACK);
+    if (pct > 0) g->fillRoundRect(x, y, max(w * pct / 100, 6), h, 3, color);
 }
 
-static void fmtReset(char *out, size_t n, int minutes) {
+static void panel(int x, int y, int w, int h) { g->drawRoundRect(x, y, w, h, 8, C_BORDER); }
+
+// "37m", "1h37m", "4d19h"
+static void fmtShort(char *out, size_t n, int minutes) {
     if (minutes < 0) snprintf(out, n, "--");
-    else if (minutes >= 1440) snprintf(out, n, "resets in %dd %dh", minutes / 1440, (minutes % 1440) / 60);
-    else if (minutes >= 60) snprintf(out, n, "resets in %dh %dm", minutes / 60, minutes % 60);
-    else snprintf(out, n, "resets in %dm", minutes);
+    else if (minutes >= 1440) snprintf(out, n, "%dd%dh", minutes / 1440, (minutes % 1440) / 60);
+    else if (minutes >= 60) snprintf(out, n, "%dh%dm", minutes / 60, minutes % 60);
+    else snprintf(out, n, "%dm", minutes);
 }
 
 static void fmtPrice(char *out, size_t n, double p) {
@@ -61,78 +64,106 @@ static void fmtPrice(char *out, size_t n, double p) {
     else snprintf(out, n, "%.4f", p);
 }
 
+// Weekday / month from local seconds (civil-from-days, proleptic Gregorian).
+static void fmtDate(char *out, size_t n, uint32_t t) {
+    static const char *W[] = {"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"};
+    static const char *M[] = {"Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
+    long z = (long)(t / 86400) + 719468;
+    long era = z / 146097, doe = z - era * 146097;
+    long yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+    long doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    long mp = (5 * doy + 2) / 153;
+    int day = doy - (153 * mp + 2) / 5 + 1;
+    int mon = mp < 10 ? mp + 3 : mp - 9;
+    snprintf(out, n, "%s %d %s", W[((t / 86400) + 4) % 7], day, M[mon - 1]);
+}
+
+static void logo(int cx, int cy) {   // small robot-face badge
+    g->drawCircle(cx, cy, 15, C_FG);
+    g->drawCircle(cx, cy, 14, C_FG);
+    g->fillRect(cx - 7, cy - 5, 4, 7, C_FG);
+    g->fillRect(cx + 3, cy - 5, 4, 7, C_FG);
+    g->drawFastHLine(cx - 5, cy + 7, 10, C_FG);
+}
+
 static void header(const char *title, const Data &d, bool have) {
-    text(title, 12, 5, &FreeSansBold12pt7b, C_FG);
-    bool fresh = have && net_age_ms() < 20000;
-    g->fillCircle(SCREEN_W - 14, 15, 4, fresh ? C_GOOD : C_BAD);
+    logo(22, 22);
+    text(title, SCREEN_W / 2, 10, &FreeSansBold12pt7b, C_FG, CENTER);
     if (have && d.localTime) {
         uint32_t t = d.localTime + (millis() - d.receivedAt) / 1000;
-        char buf[8];
+        char buf[24];
         snprintf(buf, sizeof(buf), "%02u:%02u", (unsigned)((t / 3600) % 24), (unsigned)((t / 60) % 60));
-        text(buf, SCREEN_W - 26, 8, &FreeSans9pt7b, C_MUTED, RIGHT);
+        text(buf, SCREEN_W - 10, 4, &FreeSansBold12pt7b, C_FG, RIGHT);
+        fmtDate(buf, sizeof(buf), t);
+        text(buf, SCREEN_W - 10, 26, &FreeSans9pt7b, C_DIM, RIGHT);
     }
-    g->drawFastHLine(0, 31, SCREEN_W, C_LINE);
 }
 
-static void dots() {
-    int x0 = SCREEN_W / 2 - (S_COUNT * 14) / 2 + 5;
-    for (int i = 0; i < S_COUNT; i++)
-        g->fillCircle(x0 + i * 14, 232, i == screen ? 3 : 2, i == screen ? C_ACCENT : C_LINE);
+static void gear(int cx, int cy, bool close) {
+    if (close) {
+        g->drawLine(cx - 6, cy - 6, cx + 6, cy + 6, C_DIM);
+        g->drawLine(cx - 6, cy + 6, cx + 6, cy - 6, C_DIM);
+        g->drawLine(cx - 6, cy - 5, cx + 5, cy + 6, C_DIM);
+        g->drawLine(cx - 6, cy + 5, cx + 5, cy - 6, C_DIM);
+        return;
+    }
+    for (int i = 0; i < 8; i++) {
+        float a = i * M_PI / 4;
+        g->fillCircle(cx + lroundf(cosf(a) * 8), cy + lroundf(sinf(a) * 8), 2, C_DIM);
+    }
+    g->fillCircle(cx, cy, 6, C_DIM);
+    g->fillCircle(cx, cy, 3, C_BG);
 }
 
-static void waiting(const Data &d, bool have) {
+static void footer(const Data &d, bool have) {
+    for (int i = 0; i < CONTENT_SCREENS; i++)
+        g->fillCircle(14 + i * 12, 226, 3, (screen != S_SETTINGS && i == (int)screen) ? C_ACCENT : C_BORDER);
+    bool fresh = have && net_age_ms() < 20000;
+    const char *msg = fresh ? "Connected" : net_wifi_connected() ? "No data" : "Connecting...";
+    text(msg, SCREEN_W / 2, 219, &FreeSans9pt7b, fresh ? C_ACCENT : C_DIM, CENTER);
     (void)d;
-    text(have ? "Connection lost" : "Waiting for data", SCREEN_W / 2, 90, &FreeSansBold18pt7b, C_FG, CENTER);
+    gear(SCREEN_W - 20, 226, screen == S_SETTINGS);
+}
+
+static void waiting(bool have) {
+    text(have ? "Connection lost" : "Waiting for data", SCREEN_W / 2, 84, &FreeSansBold18pt7b, C_FG, CENTER);
     char buf[64];
-    if (!net_wifi_connected()) snprintf(buf, sizeof(buf), "Connecting to Wi-Fi %s...", cfg.ssid.c_str());
+    if (!net_wifi_connected()) snprintf(buf, sizeof(buf), "Joining Wi-Fi %s", cfg.ssid.c_str());
     else snprintf(buf, sizeof(buf), "Cannot reach %s:%u", cfg.host.c_str(), cfg.port);
-    text(buf, SCREEN_W / 2, 135, &FreeSans9pt7b, C_MUTED, CENTER);
-    text("Is the daemon running on your computer?", SCREEN_W / 2, 158, &FreeSans9pt7b, C_MUTED, CENTER);
+    text(buf, SCREEN_W / 2, 126, &FreeSans9pt7b, C_DIM, CENTER);
+    text("Is the daemon running on your computer?", SCREEN_W / 2, 148, &FreeSans9pt7b, C_DIM, CENTER);
 }
 
 // ---- AI usage screen ------------------------------------------------------
 
-static void card_full(const Card &c) {
-    char buf[32];
-    text("SESSION (5H)", 16, 40, &FreeSans9pt7b, C_MUTED);
-    snprintf(buf, sizeof(buf), c.off ? "--" : "%d%%", c.session);
-    text(buf, 16, 58, &FreeSansBold24pt7b, c.off ? C_MUTED : severity(c.session));
-    fmtReset(buf, sizeof(buf), c.sessionReset);
-    text(buf, 304, 76, &FreeSans9pt7b, C_MUTED, RIGHT);
-    bar(16, 100, 288, 14, c.off ? 0 : c.session, severity(c.session));
-    text("WEEKLY (7D)", 16, 134, &FreeSans9pt7b, C_MUTED);
-    snprintf(buf, sizeof(buf), c.off ? "--" : "%d%%", c.weekly);
-    text(buf, 16, 152, &FreeSansBold18pt7b, c.off ? C_MUTED : severity(c.weekly));
-    fmtReset(buf, sizeof(buf), c.weeklyReset);
-    text(buf, 304, 162, &FreeSans9pt7b, C_MUTED, RIGHT);
-    bar(16, 190, 288, 12, c.off ? 0 : c.weekly, severity(c.weekly));
+static void usage_block(int x, int y, int w, const char *label, int pct, int resetMin, bool off) {
+    char buf[16];
+    text(label, x, y, &FreeSans9pt7b, C_DIM);
+    snprintf(buf, sizeof(buf), off ? "--" : "%d%%", pct);
+    text(buf, x, y + 15, &FreeSansBold18pt7b, off ? C_DIM : severity(pct));
+    if (!off) {
+        fmtShort(buf, sizeof(buf), resetMin);
+        text(buf, x + w, y + 24, &FreeSans9pt7b, C_DIM, RIGHT);
+    }
+    bar(x, y + 50, w, 10, off ? 0 : pct, severity(pct));
 }
 
-static void card_half(const Card &c, int x) {
-    const int w = 140;
-    char buf[32];
-    text(c.name, x, 36, &FreeSansBold12pt7b, C_ACCENT);
-    text("SESSION", x, 62, &FreeSans9pt7b, C_MUTED);
-    snprintf(buf, sizeof(buf), c.off ? "--" : "%d%%", c.session);
-    text(buf, x, 78, &FreeSansBold24pt7b, c.off ? C_MUTED : severity(c.session));
-    if (c.off) text("not detected", x, 112, &FreeSans9pt7b, C_MUTED);
-    else { fmtReset(buf, sizeof(buf), c.sessionReset); text(buf, x, 112, &FreeSans9pt7b, C_MUTED); }
-    bar(x, 132, w, 12, c.off ? 0 : c.session, severity(c.session));
-    text("WEEKLY", x, 156, &FreeSans9pt7b, C_MUTED);
-    snprintf(buf, sizeof(buf), c.off ? "--" : "%d%%", c.weekly);
-    text(buf, x, 172, &FreeSansBold18pt7b, c.off ? C_MUTED : severity(c.weekly));
-    if (!c.off) { fmtReset(buf, sizeof(buf), c.weeklyReset); text(buf, x, 204, &FreeSans9pt7b, C_MUTED); }
-    bar(x, 220 - 6, w, 8, c.off ? 0 : c.weekly, severity(c.weekly));
+static void card(const Card &c, int x, int w) {
+    const int y = 48, h = 160;
+    panel(x, y, w, h);
+    text(c.name, x + 12, y + 8, &FreeSansBold9pt7b, C_FG);
+    if (c.off) text("not detected", x + w - 12, y + 9, &FreeSans9pt7b, C_DIM, RIGHT);
+    usage_block(x + 12, y + 28, w - 24, "Session", c.session, c.sessionReset, c.off);
+    usage_block(x + 12, y + 94, w - 24, "Weekly", c.weekly, c.weeklyReset, c.off);
 }
 
 static void draw_ai(const Data &d, bool have) {
     header(have && d.multi ? "AI usage" : "Claude", d, have);
-    if (!have || net_age_ms() > 60000 || d.cardCount == 0) { waiting(d, have); return; }
+    if (!have || net_age_ms() > 60000 || d.cardCount == 0) { waiting(have); return; }
     if (d.multi && d.cardCount >= 2) {
-        card_half(d.cards[0], 12);
-        g->drawFastVLine(160, 40, 186, C_LINE);
-        card_half(d.cards[1], 172);
-    } else card_full(d.cards[0]);
+        card(d.cards[0], 8, 148);
+        card(d.cards[1], 164, 148);
+    } else card(d.cards[0], 8, 304);
 }
 
 // ---- Coin screen ----------------------------------------------------------
@@ -140,31 +171,26 @@ static void draw_ai(const Data &d, bool have) {
 static void draw_coin(const Data &d, bool have) {
     header("Coin", d, have);
     if (!have || net_age_ms() > 180000 || d.coinCount == 0) {
-        text(have ? "No coin data yet" : "Waiting for data", SCREEN_W / 2, 100, &FreeSansBold12pt7b, C_MUTED, CENTER);
+        text(have ? "No coin data yet" : "Waiting for data", SCREEN_W / 2, 110, &FreeSansBold12pt7b, C_DIM, CENTER);
         return;
     }
-    int rowH = d.coinCount == 1 ? 120 : 46;
-    int y = d.coinCount == 1 ? 60 : 40;
+    text("Coin", 12, 52, &FreeSans9pt7b, C_DIM);
+    text("Price", 212, 52, &FreeSans9pt7b, C_DIM, RIGHT);
+    text("24h", 304, 52, &FreeSans9pt7b, C_DIM, RIGHT);
+    int y = 78;
+    int rowH = d.coinCount <= 2 ? 52 : 38;
     for (int i = 0; i < d.coinCount; i++) {
         const Coin &c = d.coins[i];
         char buf[24];
         bool up = c.change24h >= 0;
-        uint16_t col = up ? C_GOOD : C_BAD;
-        if (d.coinCount == 1) {
-            text(c.sym, 16, y - 20, &FreeSansBold12pt7b, C_ACCENT);
-            fmtPrice(buf, sizeof(buf), c.price);
-            text("$", 16, y + 10, &FreeSansBold18pt7b, C_MUTED);
-            text(buf, 44, y + 6, &FreeSansBold24pt7b, C_FG);
-            snprintf(buf, sizeof(buf), "%s%.2f%%  24h", up ? "+" : "", c.change24h);
-            text(buf, 16, y + 64, &FreeSansBold12pt7b, col);
-        } else {
-            text(c.sym, 16, y + 6, &FreeSansBold12pt7b, C_ACCENT);
-            fmtPrice(buf, sizeof(buf), c.price);
-            text(buf, 150, y + 2, &FreeSansBold12pt7b, C_FG, RIGHT);
-            snprintf(buf, sizeof(buf), "%s%.2f%%", up ? "+" : "", c.change24h);
-            text(buf, 304, y + 6, &FreeSans9pt7b, col, RIGHT);
-            if (i < d.coinCount - 1) g->drawFastHLine(12, y + rowH - 6, SCREEN_W - 24, C_LINE);
-        }
+        snprintf(buf, sizeof(buf), "%s/USD", c.sym);
+        text(buf, 12, y, &FreeSans9pt7b, C_FG);
+        fmtPrice(buf, sizeof(buf), c.price);
+        char price[28];
+        snprintf(price, sizeof(price), "$%s", buf);
+        text(price, 212, y - 2, &FreeSansBold12pt7b, C_FG, RIGHT);
+        snprintf(buf, sizeof(buf), "%s%.2f%%", up ? "+" : "", c.change24h);
+        text(buf, 304, y, &FreeSans9pt7b, up ? C_GOOD : C_BAD, RIGHT);
         y += rowH;
     }
 }
@@ -176,48 +202,46 @@ static void draw_splash(const Data &d, bool have) {
     float t = millis() / 1000.0f;
     float speed = pct >= 85 ? 6.0f : pct >= 60 ? 3.0f : 1.5f;
     int bob = lroundf(sinf(t * speed) * 4);
-    uint16_t body = have ? severity(pct) : C_MUTED;
-    int bx = 112, by = 58 + bob;
+    uint16_t body = have ? severity(pct) : C_DIM;
+    int bx = 112, by = 40 + bob;
     g->fillRoundRect(bx, by, 96, 80, 14, body);
-    g->fillRoundRect(bx - 16, by + 26, 16, 22, 6, body);       // arms
+    g->fillRoundRect(bx - 16, by + 26, 16, 22, 6, body);
     g->fillRoundRect(bx + 96, by + 26, 16, 22, 6, body);
-    g->fillRect(bx + 18, by + 80, 14, 12, body);               // legs
+    g->fillRect(bx + 18, by + 80, 14, 12, body);
     g->fillRect(bx + 64, by + 80, 14, 12, body);
     bool blink = fmodf(t, 3.4f) > 3.25f;
     int eyeH = blink ? 3 : 18;
     g->fillRect(bx + 24, by + 28 + (18 - eyeH) / 2, 12, eyeH, C_BG);
     g->fillRect(bx + 60, by + 28 + (18 - eyeH) / 2, 12, eyeH, C_BG);
     if (pct >= 85) g->fillCircle(bx + 88, by + 10 + (int)(fmodf(t * 20, 14)), 3, RGB(110, 170, 255));
-    text("ClawTicker", SCREEN_W / 2, 176, &FreeSansBold12pt7b, C_FG, CENTER);
+    text("ClawTicker", SCREEN_W / 2, 158, &FreeSansBold12pt7b, C_FG, CENTER);
     char buf[40];
     if (have && d.cardCount && !d.cards[0].off) snprintf(buf, sizeof(buf), "%s %d%% of session", d.cards[0].name, pct);
     else snprintf(buf, sizeof(buf), "Waiting for data");
-    text(buf, SCREEN_W / 2, 204, &FreeSans9pt7b, C_MUTED, CENTER);
+    text(buf, SCREEN_W / 2, 186, &FreeSans9pt7b, C_DIM, CENTER);
 }
 
 // ---- Settings -------------------------------------------------------------
 
-static const int ROW_Y[4] = {38, 84, 130, 176};
-static const int ROW_H = 42;
+static const int ROW_Y[4] = {50, 90, 130, 170};
+static const int ROW_H = 34;
 
-static void row_label(int i, const char *label) {
-    g->drawRect(12, ROW_Y[i], SCREEN_W - 24, ROW_H, C_LINE);
-    text(label, 24, ROW_Y[i] + 12, &FreeSansBold9pt7b, C_FG);
+static void row(int i, const char *label, const char *value = nullptr) {
+    panel(8, ROW_Y[i], SCREEN_W - 16, ROW_H);
+    text(label, 20, ROW_Y[i] + 8, &FreeSansBold9pt7b, C_FG);
+    if (value) text(value, SCREEN_W - 20, ROW_Y[i] + 8, &FreeSans9pt7b, C_DIM, RIGHT);
 }
 
 static void draw_settings(const Data &d, bool have) {
     header("Settings", d, have);
-    row_label(0, "Brightness (tap)");
+    row(0, "Brightness");
     for (int i = 0; i < 4; i++)
-        g->fillRoundRect(190 + i * 28, ROW_Y[0] + 12, 22, 18, 3, i <= cfg.brightness ? C_ACCENT : C_TRACK);
-    row_label(1, "Display mode");
-    text(have && d.multi ? "Claude + Codex" : "Claude only", 296, ROW_Y[1] + 12, &FreeSans9pt7b, C_MUTED, RIGHT);
-    row_label(2, "Computer");
+        g->fillRoundRect(206 + i * 24, ROW_Y[0] + 9, 18, 16, 3, i <= cfg.brightness ? C_ACCENT : C_TRACK);
+    row(1, "Display", have && d.multi ? "Claude + Codex" : "Claude only");
     char buf[48];
     snprintf(buf, sizeof(buf), "%s:%u", cfg.host.c_str(), cfg.port);
-    text(buf, 296, ROW_Y[2] + 12, &FreeSans9pt7b, C_MUTED, RIGHT);
-    bool confirm = millis() < confirmResetUntil;
-    row_label(3, confirm ? "Tap again to erase Wi-Fi setup" : "Reset Wi-Fi setup");
+    row(2, "Computer", buf);
+    row(3, millis() < confirmResetUntil ? "Tap again to erase setup" : "Reset Wi-Fi setup");
 }
 
 static void on_tap_settings(int y) {
@@ -234,35 +258,42 @@ static void on_tap_settings(int y) {
     }
 }
 
-// ---- main entry points ----------------------------------------------------
+// ---- entry points ---------------------------------------------------------
 
-void ui_init() {
-    hw_set_brightness(BRIGHTNESS_LEVELS[cfg.brightness]);
+void ui_init() { hw_set_brightness(BRIGHTNESS_LEVELS[cfg.brightness]); }
+
+void ui_next_screen() {
+    screen = screen == S_SETTINGS ? prevScreen : (Screen)((screen + 1) % CONTENT_SCREENS);
+    lastDraw = 0;
 }
 
 void ui_draw_portal() {
     g->fillScreen(C_BG);
-    text("Setup", 12, 5, &FreeSansBold12pt7b, C_FG);
-    g->drawFastHLine(0, 31, SCREEN_W, C_LINE);
-    text("1. Join Wi-Fi", 16, 50, &FreeSansBold12pt7b, C_ACCENT);
-    text("ClawTicker-Setup", 16, 80, &FreeSansBold18pt7b, C_FG);
-    text("2. A setup page opens. If not,", 16, 128, &FreeSans9pt7b, C_MUTED);
-    text("browse to 192.168.4.1", 16, 150, &FreeSans9pt7b, C_MUTED);
-    text("3. Enter Wi-Fi and your computer's IP", 16, 188, &FreeSans9pt7b, C_MUTED);
+    logo(22, 22);
+    text("Setup", SCREEN_W / 2, 10, &FreeSansBold12pt7b, C_FG, CENTER);
+    text("1. Join Wi-Fi", 16, 58, &FreeSansBold12pt7b, C_ACCENT);
+    text("ClawTicker-Setup", 16, 88, &FreeSansBold18pt7b, C_FG);
+    text("2. A setup page opens. If not,", 16, 136, &FreeSans9pt7b, C_DIM);
+    text("browse to 192.168.4.1", 16, 158, &FreeSans9pt7b, C_DIM);
+    text("3. Enter Wi-Fi and your computer's IP", 16, 196, &FreeSans9pt7b, C_DIM);
     hw_flush();
 }
 
 void ui_tick() {
     static bool wasDown = false;
     static uint32_t downAt = 0;
-    static int lastY = 0;
+    static int lastX = 0, lastY = 0;
     int x, y;
     bool down = hw_touch(x, y);
-    if (down) lastY = y;
+    if (down) { lastX = x; lastY = y; }
     if (down && !wasDown) downAt = millis();
-    if (!down && wasDown && millis() - downAt < 900) {   // tap = release
-        if (screen == S_SETTINGS && lastY >= 38) on_tap_settings(lastY);
-        else screen = (Screen)((screen + 1) % S_COUNT);
+    if (!down && wasDown && millis() - downAt < 900) {   // a tap fires on release
+        bool onGear = lastX >= SCREEN_W - 52 && lastY >= SCREEN_H - 40;
+        if (onGear) {
+            if (screen == S_SETTINGS) screen = prevScreen;
+            else { prevScreen = screen; screen = S_SETTINGS; }
+        } else if (screen == S_SETTINGS) on_tap_settings(lastY);
+        else ui_next_screen();
         lastDraw = 0;
     }
     wasDown = down;
@@ -280,8 +311,7 @@ void ui_tick() {
         case S_COIN: draw_coin(d, have); break;
         case S_SPLASH: draw_splash(d, have); break;
         case S_SETTINGS: draw_settings(d, have); break;
-        default: break;
     }
-    dots();
+    footer(d, have);
     hw_flush();
 }

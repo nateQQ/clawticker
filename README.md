@@ -16,7 +16,7 @@ CoinGecko ───────────────────────�
 | Splash | A small animated mascot that gets nervous as your session fills up |
 | Settings | Brightness, display mode, reset Wi-Fi setup |
 
-Tap the screen to switch screens.
+Tap the screen to switch screens, tap the gear (bottom right) for Settings. The BOOT button also switches screens.
 
 ## What you need
 
@@ -49,8 +49,9 @@ Your token never leaves your computer except to `api.anthropic.com`. The daemon 
 
 ## Troubleshooting
 
+- **Set up over USB instead of the phone portal:** open a serial monitor (115200) and type `status`, `wifi <ssid>|<password>`, `host <ip>`, `port <n>`, then `reset`.
 - **Board shows "Waiting for data":** is the daemon running? `curl http://localhost:8787/payload` on your computer should return JSON.
-- **Wrong Wi-Fi or computer address:** Settings screen, "Reset Wi-Fi setup", or hold the BOOT button for 5 seconds.
+- **Wrong Wi-Fi or computer address:** Settings, "Reset Wi-Fi setup" (tap twice), or hold the BOOT button for 5 seconds.
 - **Claude card shows `--`:** log in to Claude Code on the computer, then wait up to 2 minutes.
 - Daemon log on macOS: `~/.config/clawticker/daemon.log`.
 
