@@ -121,7 +121,8 @@ static void fmt_date(char *out, size_t n, uint32_t t) {
     long mp = (5 * doy + 2) / 153;
     int day = doy - (153 * mp + 2) / 5 + 1;
     int mon = mp < 10 ? mp + 3 : mp - 9;
-    snprintf(out, n, "%s %d %s", W[((t / 86400) + 4) % 7], day, M[mon - 1]);
+    snprintf(out, n, "%d %s", day, M[mon - 1]);   // weekday dropped to keep the header short
+    (void)W;
 }
 
 // ---- chrome shared by every screen (header + footer) ----------------------
@@ -173,11 +174,10 @@ static lv_obj_t *make_screen(Screen id, const char *title) {
     }
 
     c.title = label(s, &inter_18, K_FG, title);
-    lv_obj_align(c.title, LV_ALIGN_TOP_MID, 0, 12);
-    c.clock = label(s, &inter_22, K_FG);
-    lv_obj_align(c.clock, LV_ALIGN_TOP_RIGHT, -10, 4);
-    c.date = label(s, &inter_12, K_DIM);
-    lv_obj_align(c.date, LV_ALIGN_TOP_RIGHT, -10, 29);
+    lv_obj_align(c.title, LV_ALIGN_TOP_LEFT, 46, 12);
+    c.clock = label(s, &inter_16, K_FG);   // "19:16" bright, "18 Nov" dim to its left
+    lv_obj_align(c.clock, LV_ALIGN_TOP_RIGHT, -10, 13);
+    c.date = label(s, &inter_14, K_DIM);
 
     for (int i = 0; i < CONTENT_SCREENS; i++) {
         c.dots[i] = box(s, 12 + i * 12, 223, 6, 6, K_BORDER, LV_RADIUS_CIRCLE);
@@ -197,11 +197,14 @@ static void refresh_chrome(Screen id, const Data &d, bool have) {
     Chrome &c = chrome[id];
     if (have && d.localTime) {
         uint32_t t = d.localTime + (millis() - d.receivedAt) / 1000;
-        char buf[24];
+        char day[16], buf[16];
+        fmt_date(day, sizeof(day), t);
         snprintf(buf, sizeof(buf), "%02u:%02u", (unsigned)((t / 3600) % 24), (unsigned)((t / 60) % 60));
         set_text(c.clock, buf);
-        fmt_date(buf, sizeof(buf), t);
-        set_text(c.date, buf);
+        set_text(c.date, day);
+        lv_obj_align(c.clock, LV_ALIGN_TOP_RIGHT, -10, 13);
+        lv_obj_update_layout(c.clock);
+        lv_obj_align(c.date, LV_ALIGN_TOP_RIGHT, -(10 + lv_obj_get_width(c.clock) + 8), 14);
     }
     bool fresh = have && net_age_ms() < 20000;
     char verb[32];
@@ -319,7 +322,7 @@ static void update_ai(const Data &d, bool have) {
     }
     bool multi = live && d.multi && d.cardCount >= 2;
     set_text(chrome[S_AI].title, multi ? "AI usage" : "Claude");
-    lv_obj_align(chrome[S_AI].title, LV_ALIGN_TOP_MID, 0, 12);
+    lv_obj_align(chrome[S_AI].title, LV_ALIGN_TOP_LEFT, 46, 12);
     for (int i = 0; i < 2; i++) {
         bool shown = live && (i == 0 || multi);
         if (!shown) { lv_obj_add_flag(cards[i].root, LV_OBJ_FLAG_HIDDEN); continue; }
