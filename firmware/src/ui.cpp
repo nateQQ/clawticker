@@ -150,6 +150,22 @@ static void on_gear(lv_event_t *) {
     else { previous = current; show(S_SETTINGS); }
 }
 
+// Horizontal flex container, children centered on one common line.
+static lv_obj_t *hrow(lv_obj_t *parent, int x, int y, int w, int h, int gap, lv_flex_align_t main) {
+    lv_obj_t *r = lv_obj_create(parent);
+    lv_obj_remove_style_all(r);
+    lv_obj_set_pos(r, x, y);
+    lv_obj_set_size(r, w, h);
+    lv_obj_set_flex_flow(r, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(r, main, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_style_pad_column(r, gap, 0);
+    lv_obj_remove_flag(r, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_remove_flag(r, LV_OBJ_FLAG_SCROLLABLE);
+    return r;
+}
+
+// Layout grid: 8 px side margins (same as the cards), header 44 px and footer 26 px
+// tall, everything in a row centered on the row's middle line.
 static lv_obj_t *make_screen(Screen id, const char *title) {
     lv_obj_t *s = lv_obj_create(nullptr);
     lv_obj_remove_style_all(s);
@@ -160,33 +176,34 @@ static lv_obj_t *make_screen(Screen id, const char *title) {
     lv_obj_add_event_cb(s, on_screen_tap, LV_EVENT_CLICKED, nullptr);
     Chrome &c = chrome[id];
 
+    lv_obj_t *head = hrow(s, 8, 0, SCREEN_W - 16, 44, 10, LV_FLEX_ALIGN_START);
     if (hasLogo) {   // custom logo uploaded on the setup page
-        lv_obj_t *li = lv_image_create(s);
+        lv_obj_t *li = lv_image_create(head);
         lv_image_set_src(li, &logoDsc);
-        lv_obj_set_pos(li, 6, 6);
     } else {         // default logo: ring with two eyes and a mouth
-        lv_obj_t *ring = box(s, 6, 6, 32, 32, K_BG, LV_RADIUS_CIRCLE);
+        lv_obj_t *ring = box(head, 0, 0, 32, 32, K_BG, LV_RADIUS_CIRCLE);
         lv_obj_set_style_border_color(ring, COL(K_FG), 0);
         lv_obj_set_style_border_width(ring, 2, 0);
         box(ring, 8, 8, 4, 8, K_FG, 1);
         box(ring, 16, 8, 4, 8, K_FG, 1);
         box(ring, 8, 19, 12, 2, K_FG, 1);
     }
+    c.title = label(head, &inter_18, K_FG, title);
+    lv_obj_set_flex_grow(c.title, 1);
+    c.date = label(head, &inter_16, K_DIM);   // same size as the time so they share a baseline
+    c.clock = label(head, &inter_16, K_FG);
+    lv_obj_set_width(c.clock, 46);
+    lv_obj_set_style_text_align(c.clock, LV_TEXT_ALIGN_RIGHT, 0);
 
-    c.title = label(s, &inter_18, K_FG, title);
-    lv_obj_align(c.title, LV_ALIGN_TOP_LEFT, 46, 12);
-    c.clock = label(s, &inter_16, K_FG);   // "19:16" bright, "18 Nov" dim to its left
-    lv_obj_align(c.clock, LV_ALIGN_TOP_RIGHT, -10, 13);
-    c.date = label(s, &inter_14, K_DIM);
-
-    for (int i = 0; i < CONTENT_SCREENS; i++) {
-        c.dots[i] = box(s, 12 + i * 12, 223, 6, 6, K_BORDER, LV_RADIUS_CIRCLE);
-    }
-    c.status = label(s, &inter_14, K_DIM);
-    lv_obj_align(c.status, LV_ALIGN_BOTTOM_MID, 0, -6);
-    c.statusIcon = icon(s, &icon_burst12, K_ACCENT);
-    c.gear = label(s, &lv_font_montserrat_14, K_DIM, id == S_SETTINGS ? LV_SYMBOL_CLOSE : LV_SYMBOL_SETTINGS);
-    lv_obj_align(c.gear, LV_ALIGN_BOTTOM_RIGHT, -12, -8);
+    lv_obj_t *foot = hrow(s, 8, SCREEN_H - 28, SCREEN_W - 16, 26, 0, LV_FLEX_ALIGN_START);
+    lv_obj_t *left = hrow(foot, 0, 0, 72, 26, 6, LV_FLEX_ALIGN_START);
+    for (int i = 0; i < CONTENT_SCREENS; i++) c.dots[i] = box(left, 0, 0, 6, 6, K_BORDER, LV_RADIUS_CIRCLE);
+    lv_obj_t *mid = hrow(foot, 0, 0, 0, 26, 6, LV_FLEX_ALIGN_CENTER);
+    lv_obj_set_flex_grow(mid, 1);
+    c.statusIcon = icon(mid, &icon_burst12, K_ACCENT);
+    c.status = label(mid, &inter_14, K_DIM);
+    lv_obj_t *right = hrow(foot, 0, 0, 72, 26, 0, LV_FLEX_ALIGN_END);
+    c.gear = label(right, &lv_font_montserrat_14, K_DIM, id == S_SETTINGS ? LV_SYMBOL_CLOSE : LV_SYMBOL_SETTINGS);
     lv_obj_add_flag(c.gear, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_set_ext_click_area(c.gear, 22);
     lv_obj_add_event_cb(c.gear, on_gear, LV_EVENT_CLICKED, nullptr);
@@ -202,19 +219,13 @@ static void refresh_chrome(Screen id, const Data &d, bool have) {
         snprintf(buf, sizeof(buf), "%02u:%02u", (unsigned)((t / 3600) % 24), (unsigned)((t / 60) % 60));
         set_text(c.clock, buf);
         set_text(c.date, day);
-        lv_obj_align(c.clock, LV_ALIGN_TOP_RIGHT, -10, 13);
-        lv_obj_update_layout(c.clock);
-        lv_obj_align(c.date, LV_ALIGN_TOP_RIGHT, -(10 + lv_obj_get_width(c.clock) + 8), 14);
     }
     bool fresh = have && net_age_ms() < 20000;
     char verb[32];
     snprintf(verb, sizeof(verb), "%s...", VERBS[((millis() / 4500) * 7) % VERB_COUNT]);
     set_text(c.status, fresh ? verb : net_wifi_connected() ? "No data" : "Connecting...");
     set_color(c.status, fresh ? K_ACCENT : K_DIM);
-    lv_obj_update_layout(c.status);
-    int tw = lv_obj_get_width(c.status), start = fresh ? (SCREEN_W - (tw + 18)) / 2 : (SCREEN_W - tw) / 2;
-    lv_obj_align(c.status, LV_ALIGN_TOP_LEFT, start + (fresh ? 18 : 0), SCREEN_H - 24);
-    if (fresh) { lv_obj_remove_flag(c.statusIcon, LV_OBJ_FLAG_HIDDEN); lv_obj_set_pos(c.statusIcon, start, SCREEN_H - 22); }
+    if (fresh) lv_obj_remove_flag(c.statusIcon, LV_OBJ_FLAG_HIDDEN);
     else lv_obj_add_flag(c.statusIcon, LV_OBJ_FLAG_HIDDEN);
     for (int i = 0; i < CONTENT_SCREENS; i++)
         lv_obj_set_style_bg_color(c.dots[i], COL(id != S_SETTINGS && i == (int)id ? K_ACCENT : K_BORDER), 0);
@@ -322,7 +333,6 @@ static void update_ai(const Data &d, bool have) {
     }
     bool multi = live && d.multi && d.cardCount >= 2;
     set_text(chrome[S_AI].title, multi ? "AI usage" : "Claude");
-    lv_obj_align(chrome[S_AI].title, LV_ALIGN_TOP_LEFT, 46, 12);
     for (int i = 0; i < 2; i++) {
         bool shown = live && (i == 0 || multi);
         if (!shown) { lv_obj_add_flag(cards[i].root, LV_OBJ_FLAG_HIDDEN); continue; }
@@ -363,13 +373,13 @@ static uint32_t coin_color(const char *sym) {
 static void build_coin() {
     lv_obj_t *s = scr[S_COIN];
     lv_obj_t *h1 = label(s, &inter_14, K_DIM, "Coin");
-    lv_obj_set_pos(h1, 12, 52);
+    lv_obj_set_pos(h1, 8, 52);
     lv_obj_t *h2 = label(s, &inter_14, K_DIM, "Price");
     lv_obj_align(h2, LV_ALIGN_TOP_LEFT, 150, 52);
     lv_obj_t *h3 = label(s, &inter_14, K_DIM, "24h");
-    lv_obj_align(h3, LV_ALIGN_TOP_RIGHT, -12, 52);
+    lv_obj_align(h3, LV_ALIGN_TOP_RIGHT, -8, 52);
     for (int i = 0; i < 4; i++) {
-        coinRows[i].badge = box(s, 12, 0, 26, 26, K_TRACK, LV_RADIUS_CIRCLE);
+        coinRows[i].badge = box(s, 8, 0, 26, 26, K_TRACK, LV_RADIUS_CIRCLE);
         coinRows[i].letter = label(coinRows[i].badge, &inter_14, K_FG, "?");
         lv_obj_center(coinRows[i].letter);
         coinRows[i].pair = label(s, &inter_16, K_FG);
@@ -407,7 +417,7 @@ static void update_coin(const Data &d, bool have) {
         int y = 84 + i * rowH;
         snprintf(buf, sizeof(buf), "%s/USD", c.sym);
         set_text(r.pair, buf);
-        lv_obj_set_pos(r.pair, 46, y + 2);
+        lv_obj_set_pos(r.pair, 42, y + 2);
         lv_obj_set_y(r.badge, y - 2);
         set_color(r.letter, coin_color(c.sym));
         char one[2] = {c.sym[0], 0};
@@ -421,7 +431,7 @@ static void update_coin(const Data &d, bool have) {
         snprintf(buf, sizeof(buf), "%s%.2f%%", c.change24h >= 0 ? "+" : "", c.change24h);
         set_text(r.change, buf);
         set_color(r.change, c.change24h >= 0 ? K_GOOD : K_BAD);
-        lv_obj_set_pos(r.change, 308 - lv_obj_get_width(r.change), y + 2);
+        lv_obj_set_pos(r.change, 312 - lv_obj_get_width(r.change), y + 2);
     }
 }
 
@@ -593,27 +603,27 @@ static void on_reset(lv_event_t *) {
 
 static void setting_row(lv_obj_t *s, int y, const char *name) {
     lv_obj_t *l = label(s, &inter_16, K_FG, name);
-    lv_obj_set_pos(l, 14, y + 5);
+    lv_obj_set_pos(l, 9, y + 5);
 }
 
 static void build_settings() {
     lv_obj_t *s = scr[S_SETTINGS];
     setting_row(s, 50, "Brightness");
-    lv_obj_t *minus = pill(s, 196, 50, 34, "-", nullptr);
-    lv_obj_t *plus = pill(s, 274, 50, 34, "+", nullptr);
+    lv_obj_t *minus = pill(s, 200, 50, 34, "-", nullptr);
+    lv_obj_t *plus = pill(s, 278, 50, 34, "+", nullptr);
     lv_obj_t *mid = label(s, &inter_14, K_FG, "");
     bright_val = mid;
-    lv_obj_set_pos(mid, 238, 57);
+    lv_obj_set_pos(mid, 242, 57);
     for (lv_obj_t *b : {minus, plus}) lv_obj_add_flag(b, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_add_event_cb(minus, on_bright, LV_EVENT_CLICKED, (void *)(intptr_t)-1);
     lv_obj_add_event_cb(plus, on_bright, LV_EVENT_CLICKED, (void *)(intptr_t)1);
 
     setting_row(s, 92, "Display");
-    pill(s, 170, 92, 138, "", &display_val);
+    pill(s, 174, 92, 138, "", &display_val);
     setting_row(s, 134, "Computer");
-    pill(s, 150, 134, 158, "", &host_val);
+    pill(s, 154, 134, 158, "", &host_val);
     setting_row(s, 176, "Wi-Fi");
-    lv_obj_t *rp = pill(s, 178, 176, 130, "Reset setup", &reset_lbl);
+    lv_obj_t *rp = pill(s, 182, 176, 130, "Reset setup", &reset_lbl);
     lv_obj_add_flag(rp, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_add_event_cb(rp, on_reset, LV_EVENT_CLICKED, nullptr);
 }
@@ -622,7 +632,7 @@ static void update_settings(const Data &d, bool have) {
     char buf[40];
     snprintf(buf, sizeof(buf), "%d/4", cfg.brightness + 1);
     set_text(bright_val, buf);
-    lv_obj_set_pos(bright_val, 252 - lv_obj_get_width(bright_val) / 2, 57);
+    lv_obj_set_pos(bright_val, 256 - lv_obj_get_width(bright_val) / 2, 57);
     set_text(display_val, have && d.multi ? "Claude + Codex" : "Claude only");
     lv_obj_center(display_val);
     snprintf(buf, sizeof(buf), "%s:%u", cfg.host.c_str(), cfg.port);
