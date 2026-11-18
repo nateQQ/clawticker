@@ -1,0 +1,19 @@
+# ClawTicker daemon config. Copy to ~/.config/clawticker/config.
+# Re-read on every refresh, no restart needed (except port).
+
+# What the board shows:
+#   claude = one Claude screen
+#   multi  = one screen with Claude and Codex side by side
+display = claude
+
+# Coins on the Coin screen, up to 4: <coingecko-id>:<SYMBOL>, comma separated.
+# Ids are on each coin's CoinGecko page ("API ID").
+coins = bitcoin:BTC
+vs = usd
+
+# Port the board connects to.
+port = 8787
+
+# Advanced (macOS): keychain entry holding the Claude Code login. Leave empty
+# to auto-detect.
+claude_keychain_service =
