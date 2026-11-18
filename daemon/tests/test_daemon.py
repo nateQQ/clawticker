@@ -13,9 +13,11 @@ class ClaudeAccount(unittest.TestCase):
         self.assertEqual(claude_usage.keychain_service("~/.claude"), "Claude Code-credentials")
 
     def test_other_dir_gets_hashed_service(self):
-        # matches how Claude Code names the entry for CLAUDE_CONFIG_DIR=/Users/natecue/.claude-dcn
-        self.assertEqual(claude_usage.keychain_service("/Users/natecue/.claude-dcn"),
-                         "Claude Code-credentials-e9524269")
+        # Claude Code names the entry "<prefix>-<first 8 hex of sha256(config dir)>"
+        import hashlib
+        path = "/home/example/.claude-work"
+        expected = "Claude Code-credentials-" + hashlib.sha256(path.encode()).hexdigest()[:8]
+        self.assertEqual(claude_usage.keychain_service(path), expected)
 
 
 class ClaudeHeaders(unittest.TestCase):
