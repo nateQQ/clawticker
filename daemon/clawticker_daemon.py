@@ -11,6 +11,7 @@ import sys
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from urllib.parse import parse_qs, urlparse
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import claude_usage  # noqa: E402
@@ -96,9 +97,7 @@ def start_workers(state):
                 state.claude = card
 
     def codex():
-        if read_config()["display"] != "multi":
-            return
-        card = codex_usage.fetch()
+        card = codex_usage.fetch()   # cheap local file read, so it is always ready if a board asks for multi
         if card:
             with state.lock:
                 state.codex = card
@@ -127,7 +126,12 @@ def make_handler(state):
             if self.path.split("?")[0] != "/payload":
                 self.send_error(404)
                 return
-            body = json.dumps(build_payload(read_config(), *state.snapshot())).encode()
+            cfg = read_config()
+            # The board can pick its own mode (Settings > Display): ?display=claude|multi
+            override = parse_qs(urlparse(self.path).query).get("display", [""])[0]
+            if override in ("claude", "multi"):
+                cfg["display"] = override
+            body = json.dumps(build_payload(cfg, *state.snapshot())).encode()
             self.send_response(200)
             self.send_header("Content-Type", "application/json")
             self.send_header("Content-Length", str(len(body)))

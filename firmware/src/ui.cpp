@@ -613,6 +613,17 @@ static void on_bright(lv_event_t *e) {
     settings_save();
 }
 
+static bool lastMulti = false;   // what the board is showing right now
+
+static void on_display(lv_event_t *) {
+    cfg.display = lastMulti ? 0 : 1;   // flip, and remember it (the computer is told on the next poll)
+    settings_save();
+    lastMulti = cfg.display == 1;
+    set_text(display_val, lastMulti ? "Claude + Codex" : "Claude only");
+    lv_obj_center(display_val);
+    net_poll_now();
+}
+
 static void on_reset(lv_event_t *) {
     if (millis() < confirmResetUntil) {
         settings_clear_wifi();
@@ -639,7 +650,9 @@ static void build_settings() {
     lv_obj_add_event_cb(plus, on_bright, LV_EVENT_CLICKED, (void *)(intptr_t)1);
 
     setting_row(s, 94, "Display");
-    pill(s, 174, 94, 138, "", &display_val);
+    lv_obj_t *dp = pill(s, 174, 94, 138, "", &display_val);
+    lv_obj_add_flag(dp, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_add_event_cb(dp, on_display, LV_EVENT_CLICKED, nullptr);
     setting_row(s, 134, "Computer");
     pill(s, 154, 134, 158, "", &host_val);
     setting_row(s, 174, "Wi-Fi");
@@ -653,7 +666,8 @@ static void update_settings(const Data &d, bool have) {
     snprintf(buf, sizeof(buf), "%d/4", cfg.brightness + 1);
     set_text(bright_val, buf);
     lv_obj_set_pos(bright_val, 256 - lv_obj_get_width(bright_val) / 2, 61);
-    set_text(display_val, have && d.multi ? "Claude + Codex" : "Claude only");
+    if (have) lastMulti = d.multi;
+    set_text(display_val, lastMulti ? "Claude + Codex" : "Claude only");
     lv_obj_center(display_val);
     snprintf(buf, sizeof(buf), "%s:%u", cfg.host.c_str(), cfg.port);
     set_text(host_val, buf);

@@ -12,6 +12,7 @@ void settings_load() {
     cfg.host = prefs.getString("host", "");
     cfg.port = prefs.getUShort("port", 8787);
     cfg.brightness = min<uint8_t>(prefs.getUChar("bright", 2), 3);
+    cfg.display = prefs.getUChar("disp", 255);
     prefs.end();
 }
 
@@ -22,6 +23,7 @@ void settings_save() {
     prefs.putString("host", cfg.host);
     prefs.putUShort("port", cfg.port);
     prefs.putUChar("bright", cfg.brightness);
+    prefs.putUChar("disp", cfg.display);
     prefs.end();
 }
 

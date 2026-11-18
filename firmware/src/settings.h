@@ -5,6 +5,7 @@ struct Settings {
     String ssid, pass, host;
     uint16_t port = 8787;
     uint8_t brightness = 2;      // index into BRIGHTNESS_LEVELS
+    uint8_t display = 255;       // 0 = Claude only, 1 = Claude + Codex, 255 = follow the computer's config
 };
 
 extern Settings cfg;

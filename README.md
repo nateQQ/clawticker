@@ -15,7 +15,7 @@ CoinGecko ───────────────────────�
 | Coin | A table of 1 to 4 coins (symbol, price, 24h change) in the same card style as the usage screen. Default BTC |
 | Splash | An animated pixel creature (ClaudePix sprites, see NOTICE) that changes animation with your usage: calm idles, busy while working, startled when the session is nearly full, asleep with no data |
 | Finished | When a Claude Code or Codex turn ends, the board shows a full screen "Your turn" with the creature dancing. Tap to dismiss, it closes by itself after 6 seconds. Detected from the tools' local session logs, no hooks to set up |
-| Settings | Brightness, display mode, reset Wi-Fi setup |
+| Settings | Brightness, Display (tap to switch between Claude only and Claude + Codex), computer address, reset Wi-Fi setup |
 
 Tap the screen to switch screens, tap the gear (bottom right) for Settings. The BOOT button also switches screens.
 
@@ -40,7 +40,7 @@ Tap the screen to switch screens, tap the gear (bottom right) for Settings. The 
 
 On the setup page you can also upload your own logo (any image, cropped square and shrunk to 32x32 in the browser, optionally rounded). It is saved on the board and shown top left. Open the setup page again from Settings > Reset setup to change it.
 
-Change what is shown later by editing `~/.config/clawticker/config` (see `daemon/config.example`). No restart needed.
+Switch between Claude only and Claude + Codex any time with Settings > Display on the board. The choice is remembered by the board. To change the default for a fresh board, edit `~/.config/clawticker/config` (see `daemon/config.example`). No restart needed.
 
 ## How it reads usage
 

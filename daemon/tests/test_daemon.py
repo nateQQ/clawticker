@@ -79,6 +79,28 @@ class Payload(unittest.TestCase):
             os.remove(path)
 
 
+class DisplayOverride(unittest.TestCase):
+    def test_query_overrides_config(self):
+        import threading, json as _json, urllib.request
+        from unittest import mock
+        patcher = mock.patch.object(d, "read_config", lambda: dict(d.DEFAULTS))   # ignore the user's real config
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        state = d.State()
+        state.claude = {"n": "Claude", "s": 1, "sr": 2, "w": 3, "wr": 4}
+        srv = d.ThreadingHTTPServer(("127.0.0.1", 0), d.make_handler(state))
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        base = "http://127.0.0.1:%d/payload" % srv.server_address[1]
+        try:
+            get = lambda q: _json.load(urllib.request.urlopen(base + q, timeout=5))
+            self.assertEqual(get("?display=multi")["mode"], "multi")
+            self.assertEqual(len(get("?display=multi")["ai"]), 2)
+            self.assertEqual(get("?display=claude")["mode"], "claude")
+            self.assertEqual(get("?display=bogus")["mode"], "claude")   # falls back to the config default
+        finally:
+            srv.shutdown()
+
+
 class AgentEvents(unittest.TestCase):
     def test_claude_end_turn_vs_tool_use(self):
         done = '{"type":"assistant","uuid":"u1","message":{"stop_reason":"end_turn"}}'

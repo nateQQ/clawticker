@@ -5,6 +5,7 @@
 #include <WiFi.h>
 
 static Data latest;
+static TaskHandle_t pollTask = nullptr;
 static SemaphoreHandle_t lock;
 static const uint32_t POLL_MS = 5000;
 
@@ -47,6 +48,7 @@ static void poll_once() {
     http.setConnectTimeout(2000);
     http.setTimeout(3000);
     String url = "http://" + cfg.host + ":" + String(cfg.port) + "/payload";
+    if (cfg.display < 2) url += cfg.display ? "?display=multi" : "?display=claude";
     if (!http.begin(url)) return;
     int code = http.GET();
     if (code == 200) parse(http.getString());
@@ -62,13 +64,13 @@ static void task(void *) {
     WiFi.begin(cfg.ssid.c_str(), cfg.pass.c_str());
     for (;;) {
         if (WiFi.status() == WL_CONNECTED) poll_once();
-        vTaskDelay(pdMS_TO_TICKS(POLL_MS));
+        ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(POLL_MS));   // sleeps, or wakes early on net_poll_now()
     }
 }
 
 void net_start() {
     lock = xSemaphoreCreateMutex();
-    xTaskCreatePinnedToCore(task, "net", 8192, nullptr, 1, nullptr, 0);   // UI loop owns core 1
+    xTaskCreatePinnedToCore(task, "net", 8192, nullptr, 1, &pollTask, 0);   // UI loop owns core 1
 }
 
 bool net_wifi_connected() { return WiFi.status() == WL_CONNECTED; }
@@ -88,3 +90,5 @@ uint32_t net_age_ms() {
 }
 
 uint32_t net_poll_max_ms() { return pollMax; }
+
+void net_poll_now() { if (pollTask) xTaskNotifyGive(pollTask); }

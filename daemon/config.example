@@ -1,7 +1,7 @@
 # ClawTicker daemon config. Copy to ~/.config/clawticker/config.
 # Re-read on every refresh, no restart needed (except port).
 
-# What the board shows:
+# What the board shows by default (the board's Settings > Display can override it):
 #   claude = one Claude screen
 #   multi  = one screen with Claude and Codex side by side
 display = claude
