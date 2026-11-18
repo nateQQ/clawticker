@@ -110,25 +110,10 @@ static void fmt_price(char *out, size_t n, double p) {
     else snprintf(out, n, "%.4f", p);
 }
 
-// Weekday / day / month from local seconds (civil-from-days).
-static void fmt_date(char *out, size_t n, uint32_t t) {
-    static const char *W[] = {"Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"};
-    static const char *M[] = {"Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
-    long z = (long)(t / 86400) + 719468;
-    long era = z / 146097, doe = z - era * 146097;
-    long yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
-    long doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-    long mp = (5 * doy + 2) / 153;
-    int day = doy - (153 * mp + 2) / 5 + 1;
-    int mon = mp < 10 ? mp + 3 : mp - 9;
-    snprintf(out, n, "%d %s", day, M[mon - 1]);   // weekday dropped to keep the header short
-    (void)W;
-}
-
 // ---- chrome shared by every screen (header + footer) ----------------------
 
 struct Chrome {
-    lv_obj_t *title, *clock, *date, *status, *statusIcon, *gear, *dots[CONTENT_SCREENS];
+    lv_obj_t *title, *clock, *status, *statusIcon, *gear, *dots[CONTENT_SCREENS];
 };
 static Chrome chrome[S_COUNT];
 
@@ -190,9 +175,8 @@ static lv_obj_t *make_screen(Screen id, const char *title) {
     }
     c.title = label(head, &inter_18, K_FG, title);
     lv_obj_set_flex_grow(c.title, 1);
-    c.date = label(head, &inter_16, K_DIM);   // same size as the time so they share a baseline
-    c.clock = label(head, &inter_16, K_FG);
-    lv_obj_set_width(c.clock, 46);
+    c.clock = label(head, &inter_22, K_FG);
+    lv_obj_set_width(c.clock, 66);   // fixed width so the digits do not nudge the layout
     lv_obj_set_style_text_align(c.clock, LV_TEXT_ALIGN_RIGHT, 0);
 
     lv_obj_t *foot = hrow(s, 8, SCREEN_H - 28, SCREEN_W - 16, 26, 0, LV_FLEX_ALIGN_START);
@@ -214,11 +198,9 @@ static void refresh_chrome(Screen id, const Data &d, bool have) {
     Chrome &c = chrome[id];
     if (have && d.localTime) {
         uint32_t t = d.localTime + (millis() - d.receivedAt) / 1000;
-        char day[16], buf[16];
-        fmt_date(day, sizeof(day), t);
+        char buf[16];
         snprintf(buf, sizeof(buf), "%02u:%02u", (unsigned)((t / 3600) % 24), (unsigned)((t / 60) % 60));
         set_text(c.clock, buf);
-        set_text(c.date, day);
     }
     bool fresh = have && net_age_ms() < 20000;
     char verb[32];
@@ -242,6 +224,7 @@ struct CardUI {
 };
 static CardUI cards[2];
 static const int CARD_Y = 48, CARD_H = 158, BAR_H = 12;
+
 
 static Meter make_meter(lv_obj_t *card, int y) {
     Meter m;
@@ -353,85 +336,75 @@ static void update_ai(const Data &d, bool have) {
 
 // ---- Coin screen ----------------------------------------------------------
 
-struct CoinRow { lv_obj_t *badge, *letter, *pair, *price, *change; };
+struct CoinRow { lv_obj_t *sym, *price, *change, *divider; };
 static CoinRow coinRows[4];
-static lv_obj_t *coin_empty;
-
-static uint32_t coin_color(const char *sym) {
-    if (!strcmp(sym, "BTC")) return 0xF7931A;
-    if (!strcmp(sym, "ETH")) return 0x627EEA;
-    if (!strcmp(sym, "SOL")) return 0x9945FF;
-    if (!strcmp(sym, "SUI")) return 0x4DA2FF;
-    if (!strcmp(sym, "XRP")) return 0x3A7BC8;
-    if (!strcmp(sym, "DOGE")) return 0xC2A633;
-    static const uint32_t PALETTE[] = {0x2BB673, 0xE0527A, 0x13A8B8, 0xB06AD8, 0xD98B2B};
-    uint32_t h = 0;
-    for (const char *p = sym; *p; p++) h = h * 31 + *p;
-    return PALETTE[h % 5];
-}
+static lv_obj_t *coin_card, *coin_head[3], *coin_empty;
+static const int COIN_PRICE_X = 196, COIN_CHANGE_X = 292;   // right edges inside the card
 
 static void build_coin() {
     lv_obj_t *s = scr[S_COIN];
-    lv_obj_t *h1 = label(s, &inter_14, K_DIM, "Coin");
-    lv_obj_set_pos(h1, 8, 52);
-    lv_obj_t *h2 = label(s, &inter_14, K_DIM, "Price");
-    lv_obj_align(h2, LV_ALIGN_TOP_LEFT, 150, 52);
-    lv_obj_t *h3 = label(s, &inter_14, K_DIM, "24h");
-    lv_obj_align(h3, LV_ALIGN_TOP_RIGHT, -8, 52);
+    coin_card = lv_obj_create(s);
+    lv_obj_remove_style_all(coin_card);
+    lv_obj_set_pos(coin_card, 8, CARD_Y);
+    lv_obj_set_size(coin_card, 304, CARD_H);
+    lv_obj_set_style_border_color(coin_card, COL(K_BORDER), 0);
+    lv_obj_set_style_border_width(coin_card, 1, 0);
+    lv_obj_set_style_radius(coin_card, 10, 0);
+    lv_obj_remove_flag(coin_card, LV_OBJ_FLAG_CLICKABLE);
+    const char *heads[3] = {"Coin", "Price", "24h"};
+    for (int i = 0; i < 3; i++) coin_head[i] = label(coin_card, &inter_14, K_DIM, heads[i]);
+    lv_obj_set_pos(coin_head[0], 12, 8);
     for (int i = 0; i < 4; i++) {
-        coinRows[i].badge = box(s, 8, 0, 26, 26, K_TRACK, LV_RADIUS_CIRCLE);
-        coinRows[i].letter = label(coinRows[i].badge, &inter_14, K_FG, "?");
-        lv_obj_center(coinRows[i].letter);
-        coinRows[i].pair = label(s, &inter_16, K_FG);
-        coinRows[i].price = label(s, &inter_18, K_FG);
-        coinRows[i].change = label(s, &inter_14, K_GOOD);
+        coinRows[i].divider = box(coin_card, 12, 0, 280, 1, K_TRACK);
+        coinRows[i].sym = label(coin_card, &inter_16, K_FG);
+        coinRows[i].price = label(coin_card, &inter_18, K_FG);
+        coinRows[i].change = label(coin_card, &inter_14, K_FG);
     }
     coin_empty = label(s, &inter_18, K_DIM, "Waiting for data");
     lv_obj_align(coin_empty, LV_ALIGN_CENTER, 0, -6);
 }
 
+static void right_at(lv_obj_t *l, int rightX, int y) { lv_obj_set_pos(l, rightX - lv_obj_get_width(l), y); }
+
 static void update_coin(const Data &d, bool have) {
     bool live = have && net_age_ms() < 180000 && d.coinCount > 0;
-    if (live) lv_obj_add_flag(coin_empty, LV_OBJ_FLAG_HIDDEN);
+    if (live) { lv_obj_add_flag(coin_empty, LV_OBJ_FLAG_HIDDEN); lv_obj_remove_flag(coin_card, LV_OBJ_FLAG_HIDDEN); }
     else {
         lv_obj_remove_flag(coin_empty, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(coin_card, LV_OBJ_FLAG_HIDDEN);
         set_text(coin_empty, have ? "No coin data yet" : "Waiting for data");
         lv_obj_align(coin_empty, LV_ALIGN_CENTER, 0, -6);
+        return;
     }
-    int rowH = d.coinCount <= 2 ? 56 : 38;
+    // column headers share the baseline of the rows below
+    lv_obj_update_layout(coin_head[1]);
+    right_at(coin_head[1], COIN_PRICE_X, 8);
+    right_at(coin_head[2], COIN_CHANGE_X, 8);
+    int rowH = d.coinCount == 1 ? 100 : d.coinCount == 2 ? 58 : 124 / d.coinCount, y0 = 30;   // rows share the 124 px under the header
     for (int i = 0; i < 4; i++) {
         CoinRow &r = coinRows[i];
-        if (!live || i >= d.coinCount) {
-            lv_obj_add_flag(r.badge, LV_OBJ_FLAG_HIDDEN);
-            lv_obj_add_flag(r.pair, LV_OBJ_FLAG_HIDDEN);
-            lv_obj_add_flag(r.price, LV_OBJ_FLAG_HIDDEN);
-            lv_obj_add_flag(r.change, LV_OBJ_FLAG_HIDDEN);
-            continue;
+        bool shown = i < d.coinCount;
+        for (lv_obj_t *o : {r.sym, r.price, r.change}) {
+            if (shown) lv_obj_remove_flag(o, LV_OBJ_FLAG_HIDDEN); else lv_obj_add_flag(o, LV_OBJ_FLAG_HIDDEN);
         }
-        lv_obj_remove_flag(r.badge, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_remove_flag(r.pair, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_remove_flag(r.price, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_remove_flag(r.change, LV_OBJ_FLAG_HIDDEN);
+        if (shown && i > 0) { lv_obj_remove_flag(r.divider, LV_OBJ_FLAG_HIDDEN); lv_obj_set_y(r.divider, y0 + i * rowH - 4); }
+        else lv_obj_add_flag(r.divider, LV_OBJ_FLAG_HIDDEN);
+        if (!shown) continue;
         const Coin &c = d.coins[i];
         char buf[32], num[24];
-        int y = 84 + i * rowH;
-        snprintf(buf, sizeof(buf), "%s/USD", c.sym);
-        set_text(r.pair, buf);
-        lv_obj_set_pos(r.pair, 42, y + 2);
-        lv_obj_set_y(r.badge, y - 2);
-        set_color(r.letter, coin_color(c.sym));
-        char one[2] = {c.sym[0], 0};
-        set_text(r.letter, one);
-        lv_obj_center(r.letter);
+        int y = y0 + i * rowH + (rowH - 22) / 2 - 2;   // rows are vertically centered in their band
+        set_text(r.sym, c.sym);
+        lv_obj_set_pos(r.sym, 12, y + 2);
         fmt_price(num, sizeof(num), c.price);
         snprintf(buf, sizeof(buf), "$%s", num);
         set_text(r.price, buf);
-        lv_obj_align(r.price, LV_ALIGN_TOP_LEFT, 0, 0);
-        lv_obj_set_pos(r.price, 212 - lv_obj_get_width(r.price), y - 1);
+        lv_obj_update_layout(r.price);
+        right_at(r.price, COIN_PRICE_X, y);
         snprintf(buf, sizeof(buf), "%s%.2f%%", c.change24h >= 0 ? "+" : "", c.change24h);
         set_text(r.change, buf);
         set_color(r.change, c.change24h >= 0 ? K_GOOD : K_BAD);
-        lv_obj_set_pos(r.change, 312 - lv_obj_get_width(r.change), y + 2);
+        lv_obj_update_layout(r.change);
+        right_at(r.change, COIN_CHANGE_X, y + 3);
     }
 }
 
