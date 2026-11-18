@@ -38,6 +38,8 @@ Tap the screen to switch screens, tap the gear (bottom right) for Settings. The 
    ```
 3. **Connect the board.** On first boot it shows a setup screen. Join the Wi-Fi `ClawTicker-Setup` on your phone, enter your home Wi-Fi, your computer's address and the port from step 1, then save.
 
+On the setup page you can also upload your own logo (any image, cropped square and shrunk to 32x32 in the browser, optionally rounded). It is saved on the board and shown top left. Open the setup page again from Settings > Reset setup to change it.
+
 Change what is shown later by editing `~/.config/clawticker/config` (see `daemon/config.example`). No restart needed.
 
 ## How it reads usage
@@ -51,7 +53,7 @@ Your token never leaves your computer except to `api.anthropic.com`. The daemon 
 
 ## Troubleshooting
 
-- **Set up over USB instead of the phone portal:** open a serial monitor (115200) and type `status`, `wifi <ssid>|<password>`, `host <ip>`, `port <n>`, then `reset`.
+- **Set up over USB instead of the phone portal:** open a serial monitor (115200) and type `status`, `wifi <ssid>|<password>`, `host <ip>`, `port <n>`, then `reset`. `portal` opens the setup page on the board's LAN address without erasing anything.
 - **Board shows "Waiting for data":** is the daemon running? `curl http://localhost:8787/payload` on your computer should return JSON.
 - **Wrong Wi-Fi or computer address:** Settings, "Reset Wi-Fi setup" (tap twice), or hold the BOOT button for 5 seconds.
 - **Claude card shows `--`:** log in to Claude Code on the computer, then wait up to 2 minutes.

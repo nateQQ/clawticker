@@ -31,3 +31,22 @@ void settings_clear_wifi() {
 }
 
 bool settings_has_wifi() { return cfg.ssid.length() > 0 && cfg.host.length() > 0; }
+
+bool settings_load_logo(uint8_t *out) {
+    prefs.begin("clawticker", true);
+    bool ok = prefs.getBytesLength("logo") == LOGO_BYTES && prefs.getBytes("logo", out, LOGO_BYTES) == LOGO_BYTES;
+    prefs.end();
+    return ok;
+}
+
+void settings_save_logo(const uint8_t *data) {
+    prefs.begin("clawticker", false);
+    prefs.putBytes("logo", data, LOGO_BYTES);
+    prefs.end();
+}
+
+void settings_clear_logo() {
+    prefs.begin("clawticker", false);
+    prefs.remove("logo");
+    prefs.end();
+}

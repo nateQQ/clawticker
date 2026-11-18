@@ -23,6 +23,10 @@ static const uint32_t K_GOOD = 0x5FC85A, K_BAD = 0xE63329, K_BAD_DIM = 0x8C2A24;
 
 static const uint32_t K_CLAUDE = 0xF2691E, K_CODEX = 0x6C8CFF, K_AMBER = 0xF5A623;
 
+static uint8_t logoPixels[LOGO_BYTES];
+static lv_image_dsc_t logoDsc;
+static bool hasLogo = false;
+
 enum Screen { S_AI, S_COIN, S_SPLASH, S_SETTINGS, S_ALERT, S_COUNT };
 static const int CONTENT_SCREENS = 3;
 static const int SESSION_MIN = 300, WEEK_MIN = 10080;   // window lengths, for the pace marker
@@ -155,13 +159,18 @@ static lv_obj_t *make_screen(Screen id, const char *title) {
     lv_obj_add_event_cb(s, on_screen_tap, LV_EVENT_CLICKED, nullptr);
     Chrome &c = chrome[id];
 
-    // logo: ring with two eyes and a mouth
-    lv_obj_t *ring = box(s, 6, 6, 32, 32, K_BG, LV_RADIUS_CIRCLE);
-    lv_obj_set_style_border_color(ring, COL(K_FG), 0);
-    lv_obj_set_style_border_width(ring, 2, 0);
-    box(ring, 8, 8, 4, 8, K_FG, 1);
-    box(ring, 16, 8, 4, 8, K_FG, 1);
-    box(ring, 8, 19, 12, 2, K_FG, 1);
+    if (hasLogo) {   // custom logo uploaded on the setup page
+        lv_obj_t *li = lv_image_create(s);
+        lv_image_set_src(li, &logoDsc);
+        lv_obj_set_pos(li, 6, 6);
+    } else {         // default logo: ring with two eyes and a mouth
+        lv_obj_t *ring = box(s, 6, 6, 32, 32, K_BG, LV_RADIUS_CIRCLE);
+        lv_obj_set_style_border_color(ring, COL(K_FG), 0);
+        lv_obj_set_style_border_width(ring, 2, 0);
+        box(ring, 8, 8, 4, 8, K_FG, 1);
+        box(ring, 16, 8, 4, 8, K_FG, 1);
+        box(ring, 8, 19, 12, 2, K_FG, 1);
+    }
 
     c.title = label(s, &inter_18, K_FG, title);
     lv_obj_align(c.title, LV_ALIGN_TOP_MID, 0, 12);
@@ -653,6 +662,15 @@ void ui_init() {
     lv_indev_set_type(indev, LV_INDEV_TYPE_POINTER);
     lv_indev_set_read_cb(indev, touch_cb);
 
+    hasLogo = settings_load_logo(logoPixels);
+    if (hasLogo) {
+        logoDsc.header.magic = LV_IMAGE_HEADER_MAGIC;
+        logoDsc.header.cf = LV_COLOR_FORMAT_ARGB8888;
+        logoDsc.header.w = logoDsc.header.h = LOGO_SIZE;
+        logoDsc.header.stride = LOGO_SIZE * 4;
+        logoDsc.data_size = LOGO_BYTES;
+        logoDsc.data = logoPixels;
+    }
     scr[S_AI] = make_screen(S_AI, "Claude");
     scr[S_COIN] = make_screen(S_COIN, "Coin");
     scr[S_SPLASH] = make_screen(S_SPLASH, "");

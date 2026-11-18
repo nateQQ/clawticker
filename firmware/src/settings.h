@@ -14,3 +14,10 @@ void settings_load();
 void settings_save();
 void settings_clear_wifi();
 bool settings_has_wifi();
+
+// Custom header logo, 32x32 ARGB8888 (B, G, R, A bytes), uploaded from the setup page.
+#define LOGO_SIZE 32
+#define LOGO_BYTES (LOGO_SIZE * LOGO_SIZE * 4)
+bool settings_load_logo(uint8_t *out);          // false if none saved
+void settings_save_logo(const uint8_t *data);
+void settings_clear_logo();

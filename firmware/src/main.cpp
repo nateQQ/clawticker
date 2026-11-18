@@ -14,8 +14,8 @@ static const uint32_t SHORT_PRESS_MS = 800;   // BOOT short press = next screen
 static void handle_command(String line) {
     line.trim();
     if (line == "status") {
-        Serial.printf("ssid=%s host=%s:%u wifi=%s age=%lums\n", cfg.ssid.c_str(), cfg.host.c_str(), cfg.port,
-                      net_wifi_connected() ? "up" : "down", (unsigned long)net_age_ms());
+        Serial.printf("ssid=%s host=%s:%u wifi=%s ip=%s age=%lums\n", cfg.ssid.c_str(), cfg.host.c_str(), cfg.port,
+                      net_wifi_connected() ? "up" : "down", WiFi.localIP().toString().c_str(), (unsigned long)net_age_ms());
     } else if (line.startsWith("wifi ")) {
         String rest = line.substring(5);
         int bar = rest.indexOf('|');
@@ -32,6 +32,8 @@ static void handle_command(String line) {
         cfg.port = line.substring(5).toInt();
         settings_save();
         Serial.println("saved, send `reset` to apply");
+    } else if (line == "portal") {
+        portal_run();   // reachable on the board's LAN address too; saving restarts the board
     } else if (line == "shot") {
         ui_snapshot_serial();
     } else if (line == "settings") {
