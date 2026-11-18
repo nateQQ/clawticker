@@ -237,7 +237,6 @@ static void make_card(CardUI &c, lv_obj_t *parent) {
     lv_obj_set_style_border_color(c.root, COL(K_BORDER), 0);
     lv_obj_set_style_border_width(c.root, 1, 0);
     lv_obj_set_style_radius(c.root, 10, 0);
-    lv_obj_set_style_bg_opa(c.root, LV_OPA_COVER, 0);
     c.icon = icon(c.root, &icon_burst16, K_CLAUDE);
     lv_obj_set_pos(c.icon, 12, 9);
     c.name = label(c.root, &inter_14, K_FG);
@@ -319,8 +318,6 @@ static void update_ai(const Data &d, bool have) {
         layout_card(cards[i], x, w);
         const Card &c = d.cards[i];
         uint32_t tint = provider_color(c.name);
-        lv_obj_set_style_bg_color(cards[i].root, COL(mix(K_BG, tint, 20)), 0);
-        lv_obj_set_style_border_color(cards[i].root, COL(mix(0x303030, tint, 110)), 0);
         lv_image_set_src(cards[i].icon, provider_icon(c.name));
         lv_obj_set_style_image_recolor(cards[i].icon, COL(tint), 0);
         set_text(cards[i].name, multi ? c.name : "Plan usage");
@@ -360,7 +357,7 @@ static void build_coin() {
     lv_obj_align(h3, LV_ALIGN_TOP_RIGHT, -12, 52);
     for (int i = 0; i < 4; i++) {
         coinRows[i].badge = box(s, 12, 0, 26, 26, K_TRACK, LV_RADIUS_CIRCLE);
-        coinRows[i].letter = label(coinRows[i].badge, &inter_14, 0xFFFFFF, "?");
+        coinRows[i].letter = label(coinRows[i].badge, &inter_14, K_FG, "?");
         lv_obj_center(coinRows[i].letter);
         coinRows[i].pair = label(s, &inter_16, K_FG);
         coinRows[i].price = label(s, &inter_18, K_FG);
@@ -399,7 +396,7 @@ static void update_coin(const Data &d, bool have) {
         set_text(r.pair, buf);
         lv_obj_set_pos(r.pair, 46, y + 2);
         lv_obj_set_y(r.badge, y - 2);
-        lv_obj_set_style_bg_color(r.badge, COL(coin_color(c.sym)), 0);
+        set_color(r.letter, coin_color(c.sym));
         char one[2] = {c.sym[0], 0};
         set_text(r.letter, one);
         lv_obj_center(r.letter);
@@ -511,7 +508,6 @@ static void build_alert() {
 static void show_alert(const char *kind) {
     bool codex = strcmp(kind, "codex") == 0;
     alertTint = codex ? K_CODEX : K_CLAUDE;
-    lv_obj_set_style_bg_color(scr[S_ALERT], COL(mix(K_BG, alertTint, 38)), 0);
     lv_image_set_src(alert_icon, codex ? &icon_term40 : &icon_burst40);
     lv_obj_set_style_image_recolor(alert_icon, COL(alertTint), 0);
     set_text(alert_title, codex ? "Codex finished" : "Claude finished");
@@ -637,6 +633,7 @@ void ui_init() {
     scr[S_ALERT] = lv_obj_create(nullptr);
     lv_obj_remove_style_all(scr[S_ALERT]);
     lv_obj_set_size(scr[S_ALERT], SCREEN_W, SCREEN_H);
+    lv_obj_set_style_bg_color(scr[S_ALERT], COL(K_BG), 0);
     lv_obj_set_style_bg_opa(scr[S_ALERT], LV_OPA_COVER, 0);
     lv_obj_add_flag(scr[S_ALERT], LV_OBJ_FLAG_CLICKABLE);
     lv_obj_add_event_cb(scr[S_ALERT], on_screen_tap, LV_EVENT_CLICKED, nullptr);
