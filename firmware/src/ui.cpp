@@ -521,27 +521,23 @@ static void update_splash(const Data &d, bool have) {
 // ---- Alert: an agent just finished a turn ----------------------------------
 
 static Player alertPlayer;
-static lv_obj_t *alert_icon, *alert_title, *alert_sub;
+static lv_obj_t *alert_title, *alert_sub;
 static uint32_t alertUntil = 0;
 static const uint32_t ALERT_MS = 6000;   // auto-close if nobody taps
 
 static void build_alert() {
     lv_obj_t *s = scr[S_ALERT];
-    player_init(alertPlayer, s, 160, 84, 6);
+    player_init(alertPlayer, s, 160, 92, 6);
     player_set(alertPlayer, sprite_index("dance_bounce"));
-    alert_icon = icon(s, &icon_burst40, K_CLAUDE);
-    lv_obj_set_pos(alert_icon, 14, 12);
     alert_title = label(s, &inter_22, K_FG, "");
     alert_sub = label(s, &inter_14, K_DIM, "Your turn. Tap to dismiss");
-    lv_obj_align(alert_sub, LV_ALIGN_TOP_MID, 0, 192);
+    lv_obj_align(alert_sub, LV_ALIGN_TOP_MID, 0, 196);
 }
 
 static void show_alert(const char *kind) {
     bool codex = strcmp(kind, "codex") == 0;
-    lv_image_set_src(alert_icon, codex ? &icon_term40 : &icon_burst40);
-    lv_obj_set_style_image_recolor(alert_icon, COL(codex ? K_CODEX : K_CLAUDE), 0);
     set_text(alert_title, codex ? "Codex finished" : "Claude finished");
-    lv_obj_align(alert_title, LV_ALIGN_TOP_MID, 0, 158);
+    lv_obj_align(alert_title, LV_ALIGN_TOP_MID, 0, 164);
     if (current != S_ALERT) alertReturn = current;
     alertUntil = millis() + ALERT_MS;
     player_set(alertPlayer, sprite_index("dance_bounce"));
