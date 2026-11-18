@@ -7,6 +7,17 @@ import claude_usage, codex_usage, coins, agent_events  # noqa: E402
 import clawticker_daemon as d  # noqa: E402
 
 
+class ClaudeAccount(unittest.TestCase):
+    def test_default_account_uses_plain_service(self):
+        self.assertEqual(claude_usage.keychain_service(None), "Claude Code-credentials")
+        self.assertEqual(claude_usage.keychain_service("~/.claude"), "Claude Code-credentials")
+
+    def test_other_dir_gets_hashed_service(self):
+        # matches how Claude Code names the entry for CLAUDE_CONFIG_DIR=/Users/natecue/.claude-dcn
+        self.assertEqual(claude_usage.keychain_service("/Users/natecue/.claude-dcn"),
+                         "Claude Code-credentials-e9524269")
+
+
 class ClaudeHeaders(unittest.TestCase):
     def test_parse(self):
         h = {"anthropic-ratelimit-unified-5h-utilization": "0.45",

@@ -51,7 +51,9 @@ bool hw_touch(int &x, int &y) {
     int ry = ((buf[3] & 0x0F) << 8) | buf[4];
     x = constrain(SCREEN_W - 1 - ry, 0, SCREEN_W - 1);
     y = constrain(rx, 0, SCREEN_H - 1);
+#ifdef TOUCH_DEBUG
     if (!touchDown) Serial.printf("touch raw=(%d,%d) screen=(%d,%d)\n", rx, ry, x, y);
+#endif
     touchDown = true;
     return true;
 }

@@ -24,7 +24,7 @@ DEFAULTS = {
     "port": "8787",
     "coins": "bitcoin:BTC",
     "vs": "usd",
-    "claude_keychain_service": "",
+    "claude_config_dir": "",                   # empty = default account (~/.claude)
 }
 AI_INTERVAL = 120      # seconds between Claude probes (each is a 1-token request)
 CODEX_INTERVAL = 30    # local file read, cheap
@@ -90,7 +90,7 @@ def _loop(interval, work):
 
 def start_workers(state):
     def claude():
-        card = claude_usage.fetch(read_config()["claude_keychain_service"] or None)
+        card = claude_usage.fetch(read_config()["claude_config_dir"] or None)
         if card:
             with state.lock:
                 state.claude = card

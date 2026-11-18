@@ -14,6 +14,7 @@ vs = usd
 # Port the board connects to.
 port = 8787
 
-# Advanced (macOS): keychain entry holding the Claude Code login. Leave empty
-# to auto-detect.
-claude_keychain_service =
+# Which Claude Code account to show. Empty = your default account (~/.claude).
+# To show another one, point at its config dir, for example a work account:
+# claude_config_dir = ~/.claude-work
+claude_config_dir =

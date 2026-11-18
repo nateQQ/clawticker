@@ -11,6 +11,8 @@ static const uint32_t SHORT_PRESS_MS = 800;   // BOOT short press = next screen
 
 // Serial setup, for when the phone portal is not convenient:
 //   status | wifi <ssid>|<password> | host <ip> | port <n> | reset
+static uint32_t perfGap = 0, perfTick = 0;   // worst-case timings since the last `perf`
+
 static void handle_command(String line) {
     line.trim();
     if (line == "status") {
@@ -32,6 +34,10 @@ static void handle_command(String line) {
         cfg.port = line.substring(5).toInt();
         settings_save();
         Serial.println("saved, send `reset` to apply");
+    } else if (line == "perf") {
+        Serial.printf("loop gap max=%lums  ui_tick max=%lums  poll max=%lums\n", (unsigned long)perfGap,
+                      (unsigned long)perfTick, (unsigned long)net_poll_max_ms());
+        perfGap = perfTick = 0;
     } else if (line == "portal") {
         portal_run();   // reachable on the board's LAN address too; saving restarts the board
     } else if (line == "shot") {
@@ -80,6 +86,11 @@ void loop() {
         pressedAt = 0;
     }
     poll_serial();
+    static uint32_t lastLoop = 0;
+    uint32_t t0 = millis();
+    if (lastLoop) perfGap = max(perfGap, t0 - lastLoop);
+    lastLoop = t0;
     ui_tick();
-    delay(5);
+    perfTick = max(perfTick, (uint32_t)(millis() - t0));
+    delay(2);
 }

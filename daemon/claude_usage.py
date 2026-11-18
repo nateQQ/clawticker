@@ -5,6 +5,8 @@ Messages API returns the plan's utilization in response headers, so no usage
 endpoint or scraping is needed. Only your own local token is used and it is
 never logged or sent anywhere except api.anthropic.com.
 """
+import getpass
+import hashlib
 import json
 import os
 import platform
@@ -25,40 +27,38 @@ def _token_from_json(text):
         return None
 
 
-def _keychain_services(preferred):
-    """Service names to try on macOS: configured one, the default, then any
-    'Claude Code-credentials*' entry (Claude Code adds a suffix when
-    CLAUDE_CONFIG_DIR is set). Listing names does not reveal secrets."""
-    names = []
-    if preferred:
-        names.append(preferred)
-    names.append(KEYCHAIN_PREFIX)
-    try:
-        out = subprocess.run(["security", "dump-keychain"], capture_output=True,
-                             text=True, timeout=10).stdout
-        for line in out.splitlines():
-            line = line.strip()
-            if line.startswith('"svce"<blob>="' + KEYCHAIN_PREFIX):
-                names.append(line.split('="', 1)[1].rstrip('"'))
-    except (OSError, subprocess.SubprocessError):
-        pass
-    seen = set()
-    return [n for n in names if not (n in seen or seen.add(n))]
+def default_config_dir():
+    return os.path.expanduser(os.environ.get("CLAUDE_CONFIG_DIR") or "~/.claude")
 
 
-def read_token(preferred_service=None):
-    """Return the OAuth access token, or None if Claude Code is not logged in."""
+def keychain_service(config_dir=None):
+    """Keychain service name Claude Code uses for a config dir: the plain name
+    for the default account, with a short hash of the directory path when
+    CLAUDE_CONFIG_DIR points elsewhere (e.g. a second, work account)."""
+    config_dir = os.path.expanduser(config_dir) if config_dir else None
+    if not config_dir or config_dir == os.path.expanduser("~/.claude"):
+        return KEYCHAIN_PREFIX
+    return KEYCHAIN_PREFIX + "-" + hashlib.sha256(config_dir.rstrip("/").encode()).hexdigest()[:8]
+
+
+def read_token(config_dir=None):
+    """Return the OAuth access token of ONE account, or None if it is not logged in.
+
+    config_dir=None means the default account (~/.claude, or CLAUDE_CONFIG_DIR if
+    set). Other accounts are never picked up by accident: set `claude_config_dir`
+    in the daemon config to read a different one."""
+    config_dir = os.path.expanduser(config_dir) if config_dir else default_config_dir()
     if platform.system() == "Darwin":
-        for svc in _keychain_services(preferred_service):
-            try:
-                out = subprocess.run(["security", "find-generic-password", "-s", svc, "-w"],
-                                     capture_output=True, text=True, timeout=10).stdout
-            except (OSError, subprocess.SubprocessError):
-                continue
-            tok = _token_from_json(out)
-            if tok:
-                return tok
-    config_dir = os.environ.get("CLAUDE_CONFIG_DIR") or os.path.expanduser("~/.claude")
+        # Two items can share the service name; the real login is the one whose
+        # account is the macOS user name.
+        try:
+            out = subprocess.run(["security", "find-generic-password", "-s", keychain_service(config_dir),
+                                  "-a", getpass.getuser(), "-w"], capture_output=True, text=True, timeout=10).stdout
+        except (OSError, subprocess.SubprocessError):
+            out = ""
+        tok = _token_from_json(out)
+        if tok:
+            return tok
     try:
         with open(os.path.join(config_dir, ".credentials.json"), encoding="utf-8") as f:
             return _token_from_json(f.read())
@@ -96,9 +96,9 @@ def parse_headers(headers, now=None):
     }
 
 
-def fetch(preferred_service=None, timeout=20):
+def fetch(config_dir=None, timeout=20):
     """Return a Claude card, or None when logged out / offline / no headers."""
-    token = read_token(preferred_service)
+    token = read_token(config_dir)
     if not token:
         return None
     body = json.dumps({"model": PROBE_MODEL, "max_tokens": 1,

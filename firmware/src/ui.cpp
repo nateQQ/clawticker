@@ -181,7 +181,6 @@ static lv_obj_t *make_screen(Screen id, const char *title) {
     lv_label_set_long_mode(c.clock, LV_LABEL_LONG_CLIP);   // never wrap onto a second line
     lv_obj_set_style_text_align(c.clock, LV_TEXT_ALIGN_RIGHT, 0);
 
-    box(s, 8, 45, SCREEN_W - 16, 1, 0x333333);   // divider between heading and content
     lv_obj_t *foot = hrow(s, 8, SCREEN_H - 28, SCREEN_W - 16, 26, 0, LV_FLEX_ALIGN_START);
     lv_obj_t *left = hrow(foot, 0, 0, 72, 26, 6, LV_FLEX_ALIGN_START);
     for (int i = 0; i < CONTENT_SCREENS; i++) c.dots[i] = box(left, 0, 0, 6, 6, K_BORDER, LV_RADIUS_CIRCLE);
@@ -419,6 +418,7 @@ struct Player {
     uint8_t buf[SPRITE_SIZE * SPRITE_SIZE * 4];   // ARGB8888, rewritten for every frame
     int preset = 0, frame = 0, loops = 0;
     uint32_t nextAt = 0;
+    int baseX = 0, baseY = 0;
 };
 
 static int sprite_index(const char *slug) {
@@ -453,7 +453,9 @@ static void player_init(Player &p, lv_obj_t *parent, int cx, int cy, int scale) 
     lv_image_set_pivot(p.img, SPRITE_SIZE / 2, SPRITE_SIZE / 2);
     lv_image_set_scale(p.img, 256 * scale);
     lv_image_set_antialias(p.img, false);   // keep the pixels square
-    lv_obj_set_pos(p.img, cx - SPRITE_SIZE / 2, cy - SPRITE_SIZE / 2);
+    p.baseX = cx - SPRITE_SIZE / 2;
+    p.baseY = cy - SPRITE_SIZE / 2;
+    lv_obj_set_pos(p.img, p.baseX, p.baseY);
     player_draw(p);
 }
 
@@ -461,6 +463,13 @@ static void player_set(Player &p, int preset) {
     p.preset = preset;
     p.frame = p.loops = 0;
     p.nextAt = 0;
+}
+
+// ClaudePix idles only run at 3 or 4 frames per second, which looks steppy on its own.
+// A slow vertical float on top keeps the creature visibly moving between frames.
+static void player_float(Player &p, uint32_t now, float amplitude, float period_s) {
+    int off = lroundf(amplitude * sinf(now / 1000.0f * 2.0f * (float)M_PI / period_s));
+    lv_obj_set_y(p.img, p.baseY + off);
 }
 
 // Advance when the frame's hold time has passed. Returns true when a loop just finished.
@@ -505,6 +514,7 @@ static void update_splash(const Data &d, bool have) {
     const char **list = mood == 3 ? ANIM_NODATA : mood == 2 ? ANIM_HOT : mood == 1 ? ANIM_BUSY : ANIM_CALM;
     int n = mood == 3 ? 1 : mood == 2 ? 2 : mood == 1 ? 2 : 6;
     if (mood != splashMood) { splashMood = mood; splashPick = 0; player_set(splashPlayer, sprite_index(list[0])); }
+    player_float(splashPlayer, millis(), mood == 2 ? 4.0f : 3.0f, mood == 2 ? 0.9f : 2.6f);
     if (player_tick(splashPlayer, millis()) && splashPlayer.loops >= 2 && n > 1) {   // rotate after two plays
         splashPick = (splashPick + 1) % n;
         player_set(splashPlayer, sprite_index(list[splashPick]));

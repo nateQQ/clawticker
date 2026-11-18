@@ -39,7 +39,10 @@ static void parse(const String &body) {
     xSemaphoreGive(lock);
 }
 
+static uint32_t pollMax = 0;
+
 static void poll_once() {
+    uint32_t started = millis();
     HTTPClient http;
     http.setConnectTimeout(2000);
     http.setTimeout(3000);
@@ -49,11 +52,13 @@ static void poll_once() {
     if (code == 200) parse(http.getString());
     else Serial.printf("poll %s -> HTTP %d (%s)\n", url.c_str(), code, HTTPClient::errorToString(code).c_str());
     http.end();
+    pollMax = max(pollMax, (uint32_t)(millis() - started));
 }
 
 static void task(void *) {
     WiFi.mode(WIFI_STA);
     WiFi.setAutoReconnect(true);
+    WiFi.setSleep(false);   // modem sleep adds latency spikes to every poll
     WiFi.begin(cfg.ssid.c_str(), cfg.pass.c_str());
     for (;;) {
         if (WiFi.status() == WL_CONNECTED) poll_once();
@@ -63,7 +68,7 @@ static void task(void *) {
 
 void net_start() {
     lock = xSemaphoreCreateMutex();
-    xTaskCreate(task, "net", 8192, nullptr, 1, nullptr);
+    xTaskCreatePinnedToCore(task, "net", 8192, nullptr, 1, nullptr, 0);   // UI loop owns core 1
 }
 
 bool net_wifi_connected() { return WiFi.status() == WL_CONNECTED; }
@@ -81,3 +86,5 @@ uint32_t net_age_ms() {
     xSemaphoreGive(lock);
     return at ? millis() - at : UINT32_MAX;
 }
+
+uint32_t net_poll_max_ms() { return pollMax; }
