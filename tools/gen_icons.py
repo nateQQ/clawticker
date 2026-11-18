@@ -1,42 +1,26 @@
-#!/usr/bin/env python3
 """Generate firmware/src/icons.c + icons.h: A8 (alpha-only) icons, recolored at runtime.
 
-The shapes are simple originals drawn here (a radial burst for Claude, a
-terminal prompt for Codex). They are stand-ins, not the vendors' official
-logos. To use official marks, replace the arrays or draw your own with the same
-names (see docs/icons.md).   Usage: python3 tools/gen_icons.py
+Claude and Codex marks are rasterized from assets/logos/*.svg (lobe-icons, MIT;
+the marks themselves are trademarks of Anthropic and OpenAI, used here only to
+label the service whose usage is shown). Replace the SVGs to change them.
+Needs cairosvg + Pillow.   Usage: python3 tools/gen_icons.py
 """
 import math, os
 from PIL import Image, ImageDraw
 
 SS = 8   # supersampling
 
-def burst(n):
-    img = Image.new("L", (n * SS, n * SS), 0)
-    d = ImageDraw.Draw(img)
-    c = n * SS / 2
-    for i in range(8):
-        a = i * math.pi / 4
-        long_ray = i % 2 == 0
-        r0, r1 = 0.12 * n * SS, (0.48 if long_ray else 0.38) * n * SS
-        w = 0.13 * n * SS
-        x0, y0 = c + math.cos(a) * r0, c + math.sin(a) * r0
-        x1, y1 = c + math.cos(a) * r1, c + math.sin(a) * r1
-        d.line([(x0, y0), (x1, y1)], fill=255, width=int(w))
-        for x, y in ((x1, y1),):
-            d.ellipse([x - w / 2, y - w / 2, x + w / 2, y + w / 2], fill=255)
-    d.ellipse([c - 0.14 * n * SS, c - 0.14 * n * SS, c + 0.14 * n * SS, c + 0.14 * n * SS], fill=255)
-    return img
+def svg_icon(name):
+    def render(n):
+        import io, cairosvg
+        png = cairosvg.svg2png(url=os.path.join(ROOT, "assets", "logos", name + ".svg"),
+                               output_width=n * SS, output_height=n * SS)
+        im = Image.open(io.BytesIO(png)).convert("RGBA")
+        return im.split()[3]   # alpha as the mask
+    return render
 
-def terminal(n):
-    img = Image.new("L", (n * SS, n * SS), 0)
-    d = ImageDraw.Draw(img)
-    s = n * SS
-    d.rounded_rectangle([0.05 * s, 0.12 * s, 0.95 * s, 0.88 * s], radius=0.18 * s, outline=255, width=int(0.09 * s))
-    w = int(0.1 * s)
-    d.line([(0.27 * s, 0.34 * s), (0.45 * s, 0.5 * s), (0.27 * s, 0.66 * s)], fill=255, width=w, joint="curve")
-    d.line([(0.52 * s, 0.67 * s), (0.74 * s, 0.67 * s)], fill=255, width=w)
-    return img
+ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
+burst, terminal = svg_icon("claude"), svg_icon("codex")
 
 ICONS = {"icon_burst12": (burst, 12), "icon_burst16": (burst, 16), "icon_burst40": (burst, 40),
          "icon_term16": (terminal, 16), "icon_term40": (terminal, 40)}
