@@ -523,7 +523,7 @@ static void update_splash(const Data &d, bool have) {
 static Player alertPlayer;
 static lv_obj_t *alert_icon, *alert_title, *alert_sub;
 static uint32_t alertUntil = 0;
-static const uint32_t ALERT_MS = 30000;
+static const uint32_t ALERT_MS = 6000;   // auto-close if nobody taps
 
 static void build_alert() {
     lv_obj_t *s = scr[S_ALERT];

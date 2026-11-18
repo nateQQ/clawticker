@@ -14,7 +14,7 @@ CoinGecko ───────────────────────�
 | Claude, or AI usage | Session (5h) and weekly (7d) usage, bars, time to reset. Pick one at install: **Claude only**, or **Claude + Codex** side by side |
 | Coin | 1 to 4 coins with price and 24h change (default BTC) |
 | Splash | An animated pixel creature (ClaudePix sprites, see NOTICE) that changes animation with your usage: calm idles, busy while working, startled when the session is nearly full, asleep with no data |
-| Finished | When a Claude Code or Codex turn ends, the board shows a full screen "Your turn" with the creature dancing. Tap to dismiss, it also closes after 30 seconds. Detected from the tools' local session logs, no hooks to set up |
+| Finished | When a Claude Code or Codex turn ends, the board shows a full screen "Your turn" with the creature dancing. Tap to dismiss, it closes by itself after 6 seconds. Detected from the tools' local session logs, no hooks to set up |
 | Settings | Brightness, display mode, reset Wi-Fi setup |
 
 Tap the screen to switch screens, tap the gear (bottom right) for Settings. The BOOT button also switches screens.

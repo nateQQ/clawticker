@@ -8,8 +8,12 @@ root = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..")
 data = json.load(open(os.path.join(root, "assets", "mascot", "claudepix-frames.json")))
 N = data["grid"]
 
+# The IPS panel washes out ClaudePix's muted body color (#CD7F6A), so boost it
+# to a more saturated orange. Add entries here to retint other colors.
+OVERRIDES = {"#cd7f6a": "#f2691e"}
+
 def rgb(hexstr):
-    h = hexstr.lstrip("#")
+    h = OVERRIDES.get(hexstr.lower(), hexstr).lstrip("#")
     if len(h) == 3:
         h = "".join(ch * 2 for ch in h)
     return int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
