@@ -62,6 +62,8 @@ Other touches: a footer with rotating status words, and a custom logo you can up
 - [PlatformIO Core](https://platformio.org/install/cli) to build and flash the firmware (`pip install platformio` or `brew install platformio`)
 - git
 
+A 3D-printable case that fits the board: [ClawTicker four-way stand case on MakerWorld](https://makerworld.com/en/models/3491493-clawticker-four-way-stand-case-for-2-8-esp32#profileId-3987622).
+
 Only the DIYMORE ES3C28P is supported. Other boards need different pins and drivers.
 
 ## Setup in 4 steps
